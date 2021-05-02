@@ -27,7 +27,5 @@ class QBot(sc2.BotAI):
                     await self.build(UnitTypeId.PYLON, near=nexuses.first)
     
     async def expand(self):
-        print(self.units(UnitTypeId.NEXUS))
-        
         if self.townhalls.amount < 2 and self.can_afford(UnitTypeId.NEXUS):
             await self.expand_now()
