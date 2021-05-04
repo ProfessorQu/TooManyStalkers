@@ -78,20 +78,30 @@ class QBot(sc2.BotAI):
                     # Build Stalker
                     gw.train(UnitTypeId.STALKER)
         
+        # Attack if there are 15+ Stalkers
         if self.units(UnitTypeId.STALKER).idle.amount > 15:
             for stalker in self.units(UnitTypeId.STALKER).idle:
                 stalker.attack(self.find_target())
         
+        # Attack units if there are 3+ Stalkers and not 15+ Stalkers
         elif self.units(UnitTypeId.STALKER).idle.amount > 3:
             if self.enemy_units.amount > 0:
                 for stalker in self.units(UnitTypeId.STALKER).idle:
                     stalker.attack(self.enemy_units.random)
     
     def find_target(self):
+        """Finds a target
+
+        Returns:
+            Units: the units/structures to target
+        """
+        # If there are enemy units, attack them
         if self.enemy_units.amount > 0:
             return self.enemy_units.random
+        # If there are enemy structures, but no enemy units, attack them
         elif self.enemy_structures.amount > 0:
             return self.enemy_structures.random
+        # If there are no enemy units or structures, attack the enemy start location
         else:
             return self.enemy_start_locations[0]
 
