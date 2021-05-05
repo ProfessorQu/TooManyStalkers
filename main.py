@@ -7,6 +7,6 @@ try:
     run_game(maps.get("Abyssal Reef LE"), [
         Bot(Race.Protoss, QBot()),
         Computer(Race.Zerg, Difficulty.Medium)
-    ], realtime=True)
-except:
-    print(f"Game ended.")
+    ])
+except (ValueError, TypeError):
+    print("Game ended.")
