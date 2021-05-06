@@ -4,9 +4,9 @@ from sc2 import Race, Difficulty
 from sc2.player import Bot, Computer
 
 # Load bot
-from bot import CompetitiveBot
+from bot import TooManyStalkersBot
 
-bot = Bot(Race.Terran, CompetitiveBot())
+bot = Bot(Race.Terran, TooManyStalkersBot())
 
 # Start game
 if __name__ == "__main__":

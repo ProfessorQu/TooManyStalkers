@@ -4,7 +4,7 @@ from sc2.ids.upgrade_id import UpgradeId
 from sc2.ids.ability_id import AbilityId
 
 
-class QBot(sc2.BotAI):
+class TooManyStalkersBot(sc2.BotAI):
     def __init__(self):
         self.MAX_WORKERS = 80
         self.MAX_SUPPLY = 200
