@@ -17,17 +17,25 @@ from loguru import logger
 # Run ladder game
 # This lets python-sc2 connect to a LadderManager game: https://github.com/Cryptyc/Sc2LadderServer
 # Based on: https://github.com/Dentosal/python-sc2/blob/master/examples/run_external.py
+
+
 def run_ladder_game(bot):
     # Load command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--GamePort", type=int, nargs="?", help="Game port")
     parser.add_argument("--StartPort", type=int, nargs="?", help="Start port")
-    parser.add_argument("--LadderServer", type=str, nargs="?", help="Ladder server")
-    parser.add_argument("--ComputerOpponent", type=str, nargs="?", help="Computer opponent")
-    parser.add_argument("--ComputerRace", type=str, nargs="?", help="Computer race")
-    parser.add_argument("--ComputerDifficulty", type=str, nargs="?", help="Computer difficulty")
-    parser.add_argument("--OpponentId", type=str, nargs="?", help="Opponent ID")
-    parser.add_argument("--RealTime", action="store_true", help="Real time flag")
+    parser.add_argument("--LadderServer", type=str,
+                        nargs="?", help="Ladder server")
+    parser.add_argument("--ComputerOpponent", type=str,
+                        nargs="?", help="Computer opponent")
+    parser.add_argument("--ComputerRace", type=str,
+                        nargs="?", help="Computer race")
+    parser.add_argument("--ComputerDifficulty", type=str,
+                        nargs="?", help="Computer difficulty")
+    parser.add_argument("--OpponentId", type=str,
+                        nargs="?", help="Opponent ID")
+    parser.add_argument("--RealTime", action="store_true",
+                        help="Real time flag")
     args, unknown = parser.parse_known_args()
 
     if args.LadderServer == None:
@@ -61,7 +69,8 @@ def run_ladder_game(bot):
         portconfig.players = [[ports[3], ports[4]]]
 
     # Join ladder game
-    g = join_ladder_game(host=host, port=host_port, players=[bot], realtime=realtime, portconfig=portconfig)
+    g = join_ladder_game(host=host, port=host_port, players=[
+                         bot], realtime=realtime, portconfig=portconfig)
 
     # Run it
     result = asyncio.get_event_loop().run_until_complete(g)
