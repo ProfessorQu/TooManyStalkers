@@ -7,7 +7,8 @@ from sc2.player import Bot, Computer
 # Load bot
 from bot import TooManyStalkersBot
 
-bot = Bot(Race.Terran, TooManyStalkersBot())
+bot = Bot(Race.Protoss, TooManyStalkersBot())
+computer = Computer(Race.Zerg, Difficulty.Medium)
 
 # Start game
 if __name__ == "__main__":
@@ -19,5 +20,5 @@ if __name__ == "__main__":
     else:
         # Local game
         print("Starting local game...")
-        sc2.run_game(sc2.maps.get("Abyssal Reef LE"), [bot, Computer(
-            Race.Protoss, Difficulty.VeryHard)], realtime=True)
+        sc2.run_game(sc2.maps.get("Abyssal Reef LE"),
+                     [bot, computer], realtime=False)
