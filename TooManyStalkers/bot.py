@@ -161,7 +161,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 stalker.attack(self.proxy.position.towards(
                     self.enemy_start_locations[0], 5))
 
-        if self.units(UnitTypeId.STALKER).amount > 10:
+        if self.units(UnitTypeId.STALKER).amount >= 10:
             self.is_attacking = True
 
             for stalker in self.units(UnitTypeId.STALKER):
