@@ -15,8 +15,11 @@ class TooManyStalkersBot(sc2.BotAI):
         super().__init__()
 
         self.MAX_WORKERS = 80
+
         self.proxy: Unit = None
         self.proxy_built = False
+
+        self.is_attacking = False
 
     async def on_step(self, iteration):
         """What to do every step
@@ -35,6 +38,8 @@ class TooManyStalkersBot(sc2.BotAI):
 
         await self.build_unit_structures()
         await self.train_units()
+        await self.attack()
+
         await self.build_proxy()
 
         await self.build_research_structures()
@@ -101,8 +106,7 @@ class TooManyStalkersBot(sc2.BotAI):
 
             # If we don't have a Gateway
             if (
-                self.structures(UnitTypeId.GATEWAY).amount
-                + self.already_pending(UnitTypeId.GATEWAY) < 2
+                self.structures(UnitTypeId.GATEWAY).amount < 2
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
                 # Build a Gateway
@@ -131,7 +135,7 @@ class TooManyStalkersBot(sc2.BotAI):
                         pos = self.proxy.position
                         placement = await self.find_placement(
                             AbilityId.WARPGATETRAIN_STALKER, pos,
-                            placement_step=3)
+                            placement_step=1)
 
                         if placement is None:
                             print("Not able to place")
@@ -147,6 +151,27 @@ class TooManyStalkersBot(sc2.BotAI):
                     if self.can_afford(UnitTypeId.STALKER):
                         gateway.train(UnitTypeId.STALKER)
 
+    async def attack(self):
+        if (
+            self.proxy is not None
+            and self.units(UnitTypeId.STALKER).amount > 4
+        ):
+            for stalker in self.units(UnitTypeId.STALKER).filter(
+                    lambda stalker: stalker.is_idle):
+                stalker.attack(self.proxy.position.towards(
+                    self.enemy_start_locations[0], 5))
+
+        if self.units(UnitTypeId.STALKER).amount > 10:
+            self.is_attacking = True
+
+            for stalker in self.units(UnitTypeId.STALKER):
+                stalker.attack(self.enemy_start_locations[0])
+
+            if self.is_attacking:
+                for stalker in self.units(UnitTypeId.STALKER).filter(
+                        lambda stalker: stalker.is_idle):
+                    stalker.attack(self.find_target())
+
     async def build_proxy(self):
         if (
             self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists
@@ -158,7 +183,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 and not self.already_pending(UnitTypeId.PYLON)
             ):
                 pos = self.enemy_start_locations[0].towards(
-                    self.game_info.map_center, random.randint(30, 40)) \
+                    self.game_info.map_center, random.randint(40, 50)) \
                     .offset((random.randint(0, 5), random.randint(0, 5)))
 
                 await self.build(UnitTypeId.PYLON, near=pos)
@@ -179,7 +204,7 @@ class TooManyStalkersBot(sc2.BotAI):
             if (
                 not self.structures(UnitTypeId.FORGE).ready.exists
                 and not self.already_pending(UnitTypeId.FORGE)
-                and not self.structures(UnitTypeId.GATEWAY).amount < 2
+                and self.already_pending(UnitTypeId.CYBERNETICSCORE)
             ):
                 await self.build(UnitTypeId.FORGE, near=pylon)
 
@@ -283,6 +308,14 @@ class TooManyStalkersBot(sc2.BotAI):
         ):
             self.proxy = None
             self.proxy_built = False
+
+    def find_target(self):
+        if self.enemy_units.amount > 0:
+            return self.enemy_units.random
+        elif self.enemy_structures.amount > 0:
+            return self.enemy_structures.random
+        else:
+            return self.enemy_start_locations[0]
 
     @property
     def max_nexuses(self) -> int:
