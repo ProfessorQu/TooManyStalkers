@@ -1,4 +1,4 @@
-# TooMantStalkers
+# TooManyStalkers
 Did you ever think: "I wish there were more Stalkers"? Well, now there's too many!
 
 [The github repository](https://github.com/ProfessorQu/TooManyStalkersBot)
