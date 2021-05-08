@@ -15,18 +15,33 @@ class TooManyStalkersBot(sc2.BotAI):
         super().__init__()
 
         self.MAX_WORKERS = 80
+        self.UPGRADES = ["PROTOSSGROUNDWEAPONSLEVEL",
+                         "PROTOSSGROUNDWEAPONSLEVEL",
+                         "PROTOSSSHIELDSLEVEL"]
+
+        self.TOWNHALLS = {
+            UnitTypeId.COMMANDCENTER, UnitTypeId.COMMANDCENTERFLYING,
+            UnitTypeId.ORBITALCOMMAND, UnitTypeId.ORBITALCOMMANDFLYING,
+            UnitTypeId.PLANETARYFORTRESS, UnitTypeId.HATCHERY,
+            UnitTypeId.LAIR, UnitTypeId.HIVE, UnitTypeId.NEXUS
+        }
 
         self.proxy: Unit = None
         self.proxy_built = False
 
-        self.is_attacking = False
+        self.ded = False
 
     async def on_step(self, iteration):
-        """What to do every step
+        if iteration == 0:
+            await self.chat_send(
+                f"Hello {self.opponent_id}, my records indicate "
+                "that I have won 420% of matches against you (flex), "
+                "also: GLHF")
 
-        Args:
-            iteration (int): the current iteration (aka the current step)
-        """
+        if iteration % 500 == 0:
+            await self.chat_send(
+                random.choice(["(poo)", "(happy)"]))
+
         # Distribute Probes
         await self.distribute_workers()
 
@@ -46,7 +61,6 @@ class TooManyStalkersBot(sc2.BotAI):
         await self.research()
 
     async def manage_bases(self):
-        # Train Probes as long as they don't go over 80
         for nexus in self.townhalls.ready:
             await self.chronoboost(nexus)
             if nexus.is_idle:
@@ -57,9 +71,8 @@ class TooManyStalkersBot(sc2.BotAI):
                         break
 
     async def build_pylons(self):
-        # Build Pylons if there is no more supply left
         if (
-            self.supply_left <= 5
+            self.supply_left <= 8
             and self.supply_cap < 200
             and not self.already_pending(UnitTypeId.PYLON)
         ):
@@ -74,9 +87,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 await self.build(UnitTypeId.PYLON, near=position)
 
     async def collect_gas(self):
-        # Build Assimilators if we have a Gateway
-        if self.structures(UnitTypeId.GATEWAY).ready.exists:
-            # Collect Vespene Gas
+        if self.structures(UnitTypeId.GATEWAY):
             for nexus in self.townhalls.ready:
                 vespenenes: Units = self.vespene_geyser.closer_than(10, nexus)
                 for vespene in vespenenes:
@@ -89,7 +100,6 @@ class TooManyStalkersBot(sc2.BotAI):
                         await self.build(UnitTypeId.ASSIMILATOR, vespene)
 
     async def expand(self):
-        # Expand if self.max_nexuses allows it
         if (
             self.townhalls.amount < self.max_nexuses
             and self.can_afford(UnitTypeId.NEXUS)
@@ -97,21 +107,16 @@ class TooManyStalkersBot(sc2.BotAI):
             await self.expand_now()
 
     async def build_unit_structures(self):
-        # If we have a Pylon, build a Gateway
         if self.structures(UnitTypeId.PYLON).ready.exists:
-            # Make sure that we don't build anything near the proxy Pylon
             pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
             while pylon == self.proxy:
                 pylon = self.structures(UnitTypeId.PYLON).ready.random
 
-            # If we don't have a Gateway
             if (
                 self.structures(UnitTypeId.GATEWAY).amount < 2
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
-                # Build a Gateway
                 await self.build(UnitTypeId.GATEWAY, near=pylon)
-            # If we do have a Gateway
 
             if (
                 self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
@@ -127,6 +132,7 @@ class TooManyStalkersBot(sc2.BotAI):
             if (
                 self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
                 and self.proxy is not None
+                and self.proxy_built
             ):
                 for warpgate in self.structures(UnitTypeId.WARPGATE):
                     abilities = await self.get_available_abilities(warpgate)
@@ -135,7 +141,7 @@ class TooManyStalkersBot(sc2.BotAI):
                         pos = self.proxy.position
                         placement = await self.find_placement(
                             AbilityId.WARPGATETRAIN_STALKER, pos,
-                            placement_step=1)
+                            placement_step=3)
 
                         if placement is None:
                             print("Not able to place")
@@ -145,36 +151,56 @@ class TooManyStalkersBot(sc2.BotAI):
             else:
                 for gateway in self.structures(UnitTypeId.GATEWAY)\
                         .filter(lambda gw: gw.is_idle):
-                    gateway(AbilityId.RALLY_BUILDING,
-                            self.main_base_ramp.barracks_in_middle)
 
                     if self.can_afford(UnitTypeId.STALKER):
                         gateway.train(UnitTypeId.STALKER)
 
     async def attack(self):
-        if (
-            self.proxy is not None
-            and self.units(UnitTypeId.STALKER).amount > 4
-        ):
-            for stalker in self.units(UnitTypeId.STALKER).filter(
-                    lambda stalker: stalker.is_idle):
-                stalker.attack(self.proxy.position.towards(
-                    self.enemy_start_locations[0], 5))
-
-        if self.units(UnitTypeId.STALKER).amount >= 10:
-            self.is_attacking = True
-
+        if self.ded:
+            target = self.find_target()
             for stalker in self.units(UnitTypeId.STALKER):
-                stalker.attack(self.enemy_start_locations[0])
+                stalker.attack(target)
 
-            if self.is_attacking:
+        elif (
+            self.proxy is not None
+            and self.proxy_built
+            and not self.can_attack
+        ):
+            if self.time // 300 > 0:
+                if (
+                    not self.enemy_structures.of_type(
+                        self.TOWNHALLS).closer_than(
+                        3, self.enemy_start_locations[0]).exists
+                    and self.units(UnitTypeId.STALKER).closer_than(
+                        10, self.enemy_start_locations[0])
+                ):
+                    if not self.ded:
+                        await self.chat_send("Ur dead GG (flex)")
+                        self.ded = True
+                else:
+                    for stalker in self.units(UnitTypeId.STALKER).filter(
+                            lambda stalker: stalker.is_idle):
+                        stalker.attack(self.proxy.position.towards(
+                            self.enemy_start_locations[0], 10))
+
+            else:
                 for stalker in self.units(UnitTypeId.STALKER).filter(
                         lambda stalker: stalker.is_idle):
-                    stalker.attack(self.find_target())
+                    stalker.attack(self.proxy.position.towards(
+                        self.enemy_start_locations[0], 10))
+        elif (
+            self.proxy is not None
+            and self.proxy_built
+            and self.can_attack
+        ):
+            await self.chat_send(
+                f"Initiating attack number {int(self.time // 300)}... GG WP")
+            for stalker in self.units(UnitTypeId.STALKER):
+                stalker.attack(self.find_target())
 
     async def build_proxy(self):
         if (
-            self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists
+            self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) > 0.25
             and self.proxy is None
             and not self.proxy_built
         ):
@@ -183,69 +209,67 @@ class TooManyStalkersBot(sc2.BotAI):
                 and not self.already_pending(UnitTypeId.PYLON)
             ):
                 pos = self.enemy_start_locations[0].towards(
-                    self.game_info.map_center, random.randint(40, 50)) \
-                    .offset((random.randint(0, 5), random.randint(0, 5)))
+                    self.game_info.map_center, random.randint(60, 70)).offset(
+                        (random.randint(-10, 10), random.randint(-10, 10)))
 
                 await self.build(UnitTypeId.PYLON, near=pos)
-
                 self.proxy_built = True
 
     async def build_research_structures(self):
         if self.structures(UnitTypeId.PYLON).ready.exists:
             pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
+
+            while pylon == self.proxy:
+                pylon = self.structures(UnitTypeId.PYLON).ready.random
+
             if (
                 self.structures(UnitTypeId.GATEWAY).ready.exists
                 and not self.structures(
-                    UnitTypeId.CYBERNETICSCORE).ready.exists
-                and not self.already_pending(UnitTypeId.CYBERNETICSCORE)
+                    UnitTypeId.CYBERNETICSCORE)
+                and self.can_afford(UnitTypeId.CYBERNETICSCORE)
             ):
                 await self.build(UnitTypeId.CYBERNETICSCORE, near=pylon)
 
             if (
-                not self.structures(UnitTypeId.FORGE).ready.exists
-                and not self.already_pending(UnitTypeId.FORGE)
-                and self.already_pending(UnitTypeId.CYBERNETICSCORE)
+                self.structures(UnitTypeId.CYBERNETICSCORE)
+                and not self.structures(UnitTypeId.FORGE)
+                and self.can_afford(UnitTypeId.FORGE)
             ):
                 await self.build(UnitTypeId.FORGE, near=pylon)
 
+            if (
+                self.already_pending_upgrade(
+                    UpgradeId.PROTOSSSHIELDSLEVEL1) > 0
+                and not self.structures(UnitTypeId.TWILIGHTCOUNCIL)
+                and self.can_afford(UnitTypeId.TWILIGHTCOUNCIL)
+            ):
+                await self.build(UnitTypeId.TWILIGHTCOUNCIL, near=pylon)
+
     async def research(self):
-        # If there is a Cybernetics Core, research Warpgate
         if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-            # Research Warpgate
             ccore: Unit = self.structures(
                 UnitTypeId.CYBERNETICSCORE).ready.first
             ccore.research(UpgradeId.WARPGATERESEARCH)
 
-        # If there is a Forge and Warpgate is done,
-        # Upgrade Weapons, Armor and Shields
         if (
             self.structures(UnitTypeId.FORGE).ready.exists
-            and self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
+            and self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) > 0
         ):
             forge: Unit = self.structures(UnitTypeId.FORGE).ready.first
-            # Upgrade Weapons
-            if (
-                self.can_afford(UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1)
-                and not self.already_pending_upgrade(
-                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1)
-            ):
-                forge.research(UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1)
-
-            # Upgrade Armor
-            elif (
-                self.can_afford(UpgradeId.PROTOSSGROUNDARMORSLEVEL1)
-                and not self.already_pending_upgrade(
-                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1)
-            ):
-                forge.research(UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1)
-
-            # Upgrade Shields
-            elif (
-                self.can_afford(UpgradeId.PROTOSSSHIELDSLEVEL1)
-                and not self.already_pending_upgrade(
-                    UpgradeId.PROTOSSSHIELDSLEVEL1)
-            ):
-                forge.research(UpgradeId.PROTOSSSHIELDSLEVEL1)
+            for i, upgrade in enumerate(self.UPGRADES, 1):
+                current_upgrade = getattr(UpgradeId, f"{upgrade}{i}")
+                if i == 1:
+                    if (
+                        self.can_afford(current_upgrade)
+                        and not self.already_pending_upgrade(current_upgrade)
+                    ):
+                        forge.research(current_upgrade)
+                elif self.structures(UnitTypeId.TWILIGHTCOUNCIL).ready.exists:
+                    if (
+                        self.can_afford(current_upgrade)
+                        and not self.already_pending_upgrade(current_upgrade)
+                    ):
+                        forge.research(current_upgrade)
 
     async def chronoboost(self, nexus):
         if nexus.energy >= 50:
@@ -260,86 +284,69 @@ class TooManyStalkersBot(sc2.BotAI):
                     nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, ccore)
                     return
 
-            if self.structures(UnitTypeId.TWILIGHTCOUNCIL).ready.exists:
-                tcouncil = self.structures(
-                    UnitTypeId.TWILIGHTCOUNCIL).ready.first
+            if (
+                self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
+                or not self.structures(UnitTypeId.CYBERNETICSCORE)
+            ):
+                if self.structures(UnitTypeId.FORGE).ready.exists:
+                    forge = self.structures(
+                        UnitTypeId.FORGE).ready.first
+
+                    if (
+                        not forge.is_idle
+                        and not forge.has_buff(BuffId.CHRONOBOOSTENERGYCOST)
+                    ):
+                        nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, forge)
+                        return
+
+                for gw in (self.structures(UnitTypeId.GATEWAY).ready |
+                           self.structures(UnitTypeId.WARPGATE).ready):
+                    if (
+                        not gw.is_idle
+                        and not gw.has_buff(BuffId.CHRONOBOOSTENERGYCOST)
+                    ):
+                        nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, gw)
+                        return
 
                 if (
-                    not tcouncil.is_idle
-                    and not tcouncil.has_buff(BuffId.CHRONOBOOSTENERGYCOST)
+                    not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST)
+                    and not self.already_pending(UnitTypeId.CYBERNETICSCORE)
                 ):
-                    nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, tcouncil)
-                    return
-
-            if self.structures(UnitTypeId.FORGE).ready.exists:
-                forge = self.structures(
-                    UnitTypeId.FORGE).ready.first
-
-                if (
-                    not forge.is_idle
-                    and not forge.has_buff(BuffId.CHRONOBOOSTENERGYCOST)
-                ):
-                    nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, forge)
-                    return
-
-            for gw in (self.structures(UnitTypeId.GATEWAY).ready |
-                       self.structures(UnitTypeId.WARPGATE).ready):
-                if (
-                    not gw.is_idle
-                    and not gw.has_buff(BuffId.CHRONOBOOSTENERGYCOST)
-                ):
-                    nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, gw)
-                    return
-
-            if not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
-                nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
+                    nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
 
     async def on_building_construction_complete(self, unit: Unit):
         if (
             unit.type_id == UnitTypeId.PYLON
-            and unit.distance_to(self.enemy_start_locations[0]) < 50
+            and unit.distance_to(self.enemy_start_locations[0]) < 80
             and self.proxy is None
         ):
             self.proxy = unit
 
+        elif unit.type_id == UnitTypeId.GATEWAY:
+            unit(AbilityId.RALLY_BUILDING,
+                 self.main_base_ramp.barracks_in_middle)
+
     async def on_unit_destroyed(self, unit: Unit):
-        if (
-            unit == self.proxy
-        ):
+        if unit == self.proxy:
             self.proxy = None
             self.proxy_built = False
 
     def find_target(self):
         if self.enemy_units.amount > 0:
-            return self.enemy_units.random
+            return self.enemy_units.random.position
         elif self.enemy_structures.amount > 0:
-            return self.enemy_structures.random
+            return self.enemy_structures.random.position
         else:
             return self.enemy_start_locations[0]
 
-    @property
+    @ property
+    def can_attack(self) -> bool:
+        return self.time % 300 == 0
+
+    @ property
     def max_nexuses(self) -> int:
-        """Return the maximum Nexuses
+        return self.time // 180 + 1
 
-        Returns:
-            int: the amount of maximum Nexuses allowed at the time
-        """
-        return int(self.time / 180) + 1
-
-    @property
+    @ property
     def max_gateways(self) -> int:
-        """Returns the maximum Gateways
-
-        Returns:
-            int: the amount of maximum Gateways allowed at the time
-        """
-        return int(self.time / 30) + 1
-
-    @property
-    def max_stalkers(self) -> int:
-        """Returns the maximum Stalkers
-
-        Returns:
-            int: the amount of maximum Stalkers allowed at the time
-        """
-        return 1000000
+        return self.time // 30 + 1
