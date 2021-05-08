@@ -5,7 +5,7 @@ Did you ever think: "I wish there were more Stalkers"? Well, now there's too man
 
 Made with the [python-sc2 library](https://github.com/BurnySc2/python-sc2), maintained by [BurnsySc2](https://github.com/BurnySc2/)
 
-# Strategy
+## Strategy
 The bot creates a Pylon close to the enemy's base,
 While the bot is researching Warpgate,
 It also researches +1 Weapons, Armor and Shields (later +2 and even later +3),
