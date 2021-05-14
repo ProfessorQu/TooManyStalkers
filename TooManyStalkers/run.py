@@ -2,13 +2,13 @@ import sc2
 import sys
 from __init__ import run_ladder_game
 from sc2 import Race, Difficulty
-from sc2.player import Bot, Computer
+from sc2.player import Bot, Computer, Human
 
 # Load bot
 from bot import TooManyStalkersBot
 
 bot = Bot(Race.Protoss, TooManyStalkersBot())
-computer = Computer(Race.Zerg, Difficulty.Medium)
+human = Human(Race.Zerg)
 
 # Start game
 if __name__ == "__main__":
@@ -20,5 +20,5 @@ if __name__ == "__main__":
     else:
         # Local game
         print("Starting local game...")
-        sc2.run_game(sc2.maps.get("Abyssal Reef LE"),
-                     [bot, computer], realtime=True)
+        sc2.run_game(sc2.maps.get("DeathAura506"),
+                     [human, bot], realtime=True)

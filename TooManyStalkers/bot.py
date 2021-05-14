@@ -28,8 +28,9 @@ class TooManyStalkersBot(sc2.BotAI):
             UnitTypeId.LAIR, UnitTypeId.HIVE, UnitTypeId.NEXUS
         }
 
+        self.MAX_PROXY_ATTEMPTS = 3
         self.proxy: Unit = None
-        self.proxy_built = False
+        self.proxy_attempts = 0
 
         self.ded = False
 
@@ -40,14 +41,14 @@ class TooManyStalkersBot(sc2.BotAI):
             iteration (int): what number step it currently is
         """
         # Send a spirit-breaking message
-        if iteration == 0:
+        if iteration == 1:
             await self.chat_send(
                 f"Hello {self.opponent_id}, my records indicate "
                 "that I have won 420% of matches against you (flex), "
                 "also: GLHF")
 
         # Send a poo emoji or a happy every so often
-        if iteration % 500 == 0:
+        if iteration % 500 in range(-1, 1):
             await self.chat_send(
                 random.choice(["(poo)", "(happy)"]))
 
@@ -173,8 +174,6 @@ class TooManyStalkersBot(sc2.BotAI):
             # If we have Warpgates, warp them
             if (
                 self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
-                and self.proxy is not None
-                and self.proxy_built
             ):
                 # Go over all Waprgates
                 for warpgate in self.structures(UnitTypeId.WARPGATE):
@@ -182,8 +181,13 @@ class TooManyStalkersBot(sc2.BotAI):
                     abilities = await self.get_available_abilities(warpgate)
 
                     if AbilityId.WARPGATETRAIN_STALKER in abilities:
-                        # Warp them next to the proxy
-                        pos = self.proxy.position
+                        # If there is a proxy, warp them there
+                        if self.proxy is not None:
+                            pos = self.proxy.position
+                        # If there is not a proxy, warp them there
+                        else:
+                            pos = self.structures(UnitTypeId.PYLON).ready.random.position
+
                         placement = await self.find_placement(
                             AbilityId.WARPGATETRAIN_STALKER, pos,
                             placement_step=3)
@@ -216,7 +220,6 @@ class TooManyStalkersBot(sc2.BotAI):
         # Else if the enemy's main base is not "ded", but you can't attack
         elif (
             self.proxy is not None
-            and self.proxy_built
             and not self.can_attack
         ):
             # If there already was an attack
@@ -249,7 +252,6 @@ class TooManyStalkersBot(sc2.BotAI):
         # If we can attack
         elif (
             self.proxy is not None
-            and self.proxy_built
             and self.can_attack
         ):
             # Attack
@@ -265,7 +267,7 @@ class TooManyStalkersBot(sc2.BotAI):
         if (
             self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) > 0.25
             and self.proxy is None
-            and not self.proxy_built
+            and self.proxy_attempts < self.MAX_PROXY_ATTEMPTS
         ):
             # If we can build a Pylon
             if (
@@ -278,7 +280,7 @@ class TooManyStalkersBot(sc2.BotAI):
                         (random.randint(-10, 10), random.randint(-10, 10)))
 
                 await self.build(UnitTypeId.PYLON, near=pos)
-                self.proxy_built = True
+                self.proxy_attempts += 1
 
     async def build_research_structures(self):
         """Build structures to research from
@@ -408,7 +410,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 ):
                     nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
 
-    async def on_building_construction_complete(self, unit: Unit):
+    async def on_building_construction_started(self, unit: Unit):
         """When the construction of a building gets completed, check if it is the proxy
 
         Args:
@@ -437,7 +439,6 @@ class TooManyStalkersBot(sc2.BotAI):
         # If the unit destroyed is the proxy, set it to None
         if unit == self.proxy:
             self.proxy = None
-            self.proxy_built = False
 
     def find_target(self):
         """Find a target to attack
@@ -463,7 +464,7 @@ class TooManyStalkersBot(sc2.BotAI):
             bool: can the bot attack
         """
         # Attack every 5 minutes
-        return self.time % 300 == 0
+        return self.time % 300 in range(-10, 10)
 
     @ property
     def max_nexuses(self) -> int:
