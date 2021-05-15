@@ -8,6 +8,7 @@ from sc2.player import Bot, Computer, Human
 from bot import TooManyStalkersBot
 
 bot = Bot(Race.Protoss, TooManyStalkersBot())
+computer = Computer(Race.Zerg, Difficulty.Medium)
 human = Human(Race.Zerg)
 
 # Start game
@@ -21,4 +22,4 @@ if __name__ == "__main__":
         # Local game
         print("Starting local game...")
         sc2.run_game(sc2.maps.get("DeathAura506"),
-                     [human, bot], realtime=True)
+                     [bot, computer], realtime=True)

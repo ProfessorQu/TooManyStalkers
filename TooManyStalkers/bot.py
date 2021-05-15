@@ -8,6 +8,9 @@ from sc2.ids.buff_id import BuffId
 
 from sc2.unit import Unit
 from sc2.units import Units
+from sc2.position import Point2
+
+from loguru import logger
 
 
 class TooManyStalkersBot(sc2.BotAI):
@@ -28,11 +31,19 @@ class TooManyStalkersBot(sc2.BotAI):
             UnitTypeId.LAIR, UnitTypeId.HIVE, UnitTypeId.NEXUS
         }
 
+        self.greeted = False
+
         self.MAX_PROXY_ATTEMPTS = 3
         self.proxy: Unit = None
+        self.proxy_position: Point2 = Point2()
         self.proxy_attempts = 0
 
-        self.ded = False
+        self.enemy_main_destroyed = False
+
+        self.attack_amount = 0
+
+    async def on_before_start(self):
+        self.proxy_position = self.enemy_start_locations[0].towards(self.game_info.map_center, random.randint(60, 70)).offset((random.randint(-10, 10), random.randint(-10, 10)))
 
     async def on_step(self, iteration: int):
         """What to do each step
@@ -41,16 +52,10 @@ class TooManyStalkersBot(sc2.BotAI):
             iteration (int): what number step it currently is
         """
         # Send a spirit-breaking message
-        if iteration == 1:
-            await self.chat_send(
-                f"Hello {self.opponent_id}, my records indicate "
-                "that I have won 420% of matches against you (flex), "
-                "also: GLHF")
-
-        # Send a poo emoji or a happy every so often
-        if iteration % 500 in range(-1, 1):
-            await self.chat_send(
-                random.choice(["(poo)", "(happy)"]))
+        if iteration > 0 and not self.greeted:
+            logger.info("Greeted the enemy")
+            self.greeted = True
+            await self.chat_send(f"Hello {self.opponent_id}, GL HF")
 
         # Distribute Probes
         await self.distribute_workers()
@@ -86,6 +91,7 @@ class TooManyStalkersBot(sc2.BotAI):
             if nexus.is_idle:
                 if self.workers.amount < self.MAX_WORKERS:
                     if self.can_afford(UnitTypeId.PROBE):
+                        logger.info(f"Unit Nexus trained Probe at location {nexus.position}")
                         nexus.train(UnitTypeId.PROBE)
                     else:
                         break
@@ -107,6 +113,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 position = self.townhalls.ready.random.position.towards(
                     self.game_info.map_center, 10
                 )
+                logger.info(f"Building a Pylon near {position}")
                 await self.build(UnitTypeId.PYLON, near=position)
 
     async def collect_gas(self):
@@ -126,6 +133,7 @@ class TooManyStalkersBot(sc2.BotAI):
                         and not self.already_pending(UnitTypeId.ASSIMILATOR)
                         and self.can_afford(UnitTypeId.ASSIMILATOR)
                     ):
+                        logger.info(f"Building an Assimilator at {vespene.position}")
                         await self.build(UnitTypeId.ASSIMILATOR, vespene)
 
     async def expand(self):
@@ -136,6 +144,7 @@ class TooManyStalkersBot(sc2.BotAI):
             self.townhalls.amount < self.max_nexuses
             and self.can_afford(UnitTypeId.NEXUS)
         ):
+            logger.info("Expanding")
             # Use the built-in expand_now method
             await self.expand_now()
 
@@ -154,6 +163,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 self.structures(UnitTypeId.GATEWAY).amount < 2
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
+                logger.info(f"Building a Gateway near {pylon.position}")
                 await self.build(UnitTypeId.GATEWAY, near=pylon)
 
             # When the Warpgate finishes, build more Gateways
@@ -164,6 +174,7 @@ class TooManyStalkersBot(sc2.BotAI):
                 < self.max_gateways
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
+                logger.info(f"Building a Gateway near {pylon.position}")
                 await self.build(UnitTypeId.GATEWAY, near=pylon)
 
     async def train_units(self):
@@ -197,6 +208,7 @@ class TooManyStalkersBot(sc2.BotAI):
                             return
 
                         # Warp
+                        logger.info(f"Warping in a Stalker at {placement.position}")
                         warpgate.warp_in(UnitTypeId.STALKER, placement)
             # If we don't have Warpgates
             else:
@@ -204,24 +216,26 @@ class TooManyStalkersBot(sc2.BotAI):
                 for gateway in self.structures(UnitTypeId.GATEWAY)\
                         .filter(lambda gw: gw.is_idle):
 
+                    logger.info(f"Trainig a Stalker at {gateway.position}")
                     # Train a Stalker
                     gateway.train(UnitTypeId.STALKER)
 
     async def attack(self):
         """Attack the enemy
         """
-        # If the enemy's main base is "ded"
-        if self.ded:
+        # If the enemy's main base is destroyed
+        if self.enemy_main_destroyed:
             # Kill everything
             target = self.find_target()
+            logger.info(f"Attacking {target} with all Stalkers")
             for stalker in self.units(UnitTypeId.STALKER):
                 stalker.attack(target)
 
-        # Else if the enemy's main base is not "ded", but you can't attack
+        # Else if the enemy's main base is not destroyed, but you can't attack
         elif (
-            self.proxy is not None
-            and not self.can_attack
+            not self.time // 300 > self.attack_amount
         ):
+            self.attack_amount = self.time // 300
             # If there already was an attack
             if self.time // 300 > 0:
                 # If the enemy's main base is dead
@@ -232,33 +246,36 @@ class TooManyStalkersBot(sc2.BotAI):
                     and self.units(UnitTypeId.STALKER).closer_than(
                         10, self.enemy_start_locations[0])
                 ):
-                    if not self.ded:
-                        await self.chat_send("Ur dead. GG WP (flex)")
-                        # Activate "ded" mode
-                        self.ded = True
+                    if not self.enemy_main_destroyed:
+                        logger.info(f"Enemy main base destroyed")
+                        await self.chat_send("There goes your main. (smile)")
+                        # Activate "enemy_main_destroyed" mode
+                        self.enemy_main_destroyed = True
                 else:
+                    pos = self.proxy_position.towards(self.enemy_start_locations[0], 10)
+                    logger.info(f"Moving Stalkers to {pos}")
                     # Move Stalkers away so new Stalkers can warp in
                     for stalker in self.units(UnitTypeId.STALKER).filter(
                             lambda stalker: stalker.is_idle):
-                        stalker.attack(self.proxy.position.towards(
-                            self.enemy_start_locations[0], 10))
+                        stalker.attack(pos)
             # If there wasn't an attack before
             else:
+                pos = self.proxy_position.towards(self.enemy_start_locations[0], 10)
+                logger.info(f"Moving Stalkers to {pos}")
                 # Move Stalkers away so new Stalkers can warp in
                 for stalker in self.units(UnitTypeId.STALKER).filter(
                         lambda stalker: stalker.is_idle):
-                    stalker.attack(self.proxy.position.towards(
-                        self.enemy_start_locations[0], 10))
+                    stalker.attack(pos)
         # If we can attack
         elif (
-            self.proxy is not None
-            and self.can_attack
+            self.time // 300 > self.attack_amount
         ):
+            target = self.find_target()
+            logger.info(f"Attacking {target}")
             # Attack
-            await self.chat_send(
-                f"Initiating attack number {int(self.time // 300)}... GG WP")
+            await self.chat_send(f"Initiating attack {int(self.time // 300)}...")
             for stalker in self.units(UnitTypeId.STALKER):
-                stalker.attack(self.find_target())
+                stalker.attack(target)
 
     async def build_proxy(self):
         """Builds a proxy Pylon if the Warpgate research is a quarter done
@@ -275,9 +292,13 @@ class TooManyStalkersBot(sc2.BotAI):
                 and not self.already_pending(UnitTypeId.PYLON)
             ):
                 # Build a Pylon at a random position towards the enemy base
-                pos = self.enemy_start_locations[0].towards(
-                    self.game_info.map_center, random.randint(60, 70)).offset(
-                        (random.randint(-10, 10), random.randint(-10, 10)))
+                if self.proxy_attempts == 0:
+                    pos = self.proxy_position
+                elif self.proxy_attempts > 0:
+                    pos = self.enemy_start_locations[0].towards(
+                        self.game_info.map_center, random.randint(60, 70)).offset(
+                            (random.randint(-10, 10), random.randint(-10, 10)))
+                    self.proxy_position = pos
 
                 await self.build(UnitTypeId.PYLON, near=pos)
                 self.proxy_attempts += 1
@@ -455,16 +476,6 @@ class TooManyStalkersBot(sc2.BotAI):
         # Else just return the enemy start location
         else:
             return self.enemy_start_locations[0]
-
-    @ property
-    def can_attack(self) -> bool:
-        """Checks if the bot must attack
-
-        Returns:
-            bool: can the bot attack
-        """
-        # Attack every 5 minutes
-        return self.time % 300 in range(-10, 10)
 
     @ property
     def max_nexuses(self) -> int:
