@@ -8,7 +8,7 @@ from sc2.ids.buff_id import BuffId
 
 from sc2.unit import Unit
 from sc2.units import Units
-from sc2.position import Point2
+from sc2.position import Point2, Point3
 
 from loguru import logger
 
@@ -38,12 +38,44 @@ class TooManyStalkersBot(sc2.BotAI):
         self.proxy_position: Point2 = Point2()
         self.proxy_attempts = 0
 
-        self.enemy_main_destroyed = False
-
         self.attack_amount = 0
 
+        self.defenders: Units = None
+        self.attackers: Units = None
+        self.defend_attack_ratio = 1/3
+        self.defend_position: Point2 = Point2()
+
     async def on_before_start(self):
-        self.proxy_position = self.enemy_start_locations[0].towards(self.game_info.map_center, random.randint(60, 70)).offset((random.randint(-10, 10), random.randint(-10, 10)))
+        proxy_distance = random.randint(60, 70)
+        proxy_offset = (random.randint(-10, 10), random.randint(-10, 10))
+
+        self.proxy_position = self.enemy_start_locations[0]
+        self.proxy_position.towards(
+            self.game_info.map_center, proxy_distance)
+        self.proxy_position.offset(proxy_offset)
+
+        defend_distance = random.randint(10, 30)
+        defend_offset_x = random.randint(0, 10)
+        defend_offset_y = random.randint(0, 10)
+
+        if self.townhalls.first.position.x < self.game_info.map_center.x:
+            x_multiplier = 1
+        else:
+            x_multiplier = -1
+
+        if self.townhalls.first.position.y < self.game_info.map_center.y:
+            y_multiplier = 1
+        else:
+            y_multiplier = -1
+
+        defend_offset = (defend_offset_x * x_multiplier,
+                         defend_offset_y * y_multiplier)
+
+        self.defend_position = self.townhalls.first.position
+        self.defend_position.towards(
+            self.game_info.map_center, defend_distance)
+
+        self.defend_position.offset(defend_offset)
 
     async def on_step(self, iteration: int):
         """What to do each step
@@ -56,6 +88,8 @@ class TooManyStalkersBot(sc2.BotAI):
             logger.info("Greeted the enemy")
             self.greeted = True
             await self.chat_send(f"Hello {self.opponent_id}, GL HF")
+
+        self.debug_draw()
 
         # Distribute Probes
         await self.distribute_workers()
@@ -79,6 +113,11 @@ class TooManyStalkersBot(sc2.BotAI):
         # Build research structures and then research from those structures
         await self.build_research_structures()
         await self.research()
+
+    def debug_draw(self):
+        self._client.debug_box2_out(
+            Point3((self.defend_position.x, self.defend_position.y, 0.5)),
+            half_vertex_length=2, color=(255, 255, 0))
 
     async def manage_bases(self):
         """Handle the Chronoboost for each nexus and produce workers
@@ -192,7 +231,8 @@ class TooManyStalkersBot(sc2.BotAI):
                             pos = self.proxy.position
                         # If there is not a proxy, warp them there
                         else:
-                            pos = self.structures(UnitTypeId.PYLON).ready.random.position
+                            pos = self.structures(
+                                UnitTypeId.PYLON).ready.random.position
 
                         placement = await self.find_placement(
                             AbilityId.WARPGATETRAIN_STALKER, pos,
@@ -214,59 +254,54 @@ class TooManyStalkersBot(sc2.BotAI):
                     gateway.train(UnitTypeId.STALKER)
 
     async def attack(self):
-        """Attack the enemy
+        """Attack and defend
         """
-        # If the enemy's main base is destroyed
-        if self.enemy_main_destroyed:
-            # Kill everything
-            target = self.find_target()
-            logger.info(f"Attacking {target} with all Stalkers")
-            for stalker in self.units(UnitTypeId.STALKER):
-                stalker.attack(target)
 
-        # Else if the enemy's main base is not destroyed, but you can't attack
-        elif (
-            not self.time // 300 > self.attack_amount
-        ):
-            self.attack_amount = self.time // 300
-            # If there already was an attack
-            if self.time // 300 > 0:
-                # If the enemy's main base is dead
-                if (
-                    not self.enemy_structures.of_type(
-                        self.TOWNHALLS).closer_than(
-                        3, self.enemy_start_locations[0]).exists
-                    and self.units(UnitTypeId.STALKER).closer_than(
-                        10, self.enemy_start_locations[0])
-                ):
-                    if not self.enemy_main_destroyed:
-                        logger.info(f"Enemy main base destroyed")
-                        await self.chat_send("There goes your main. (smile)")
-                        # Activate "enemy_main_destroyed" mode
-                        self.enemy_main_destroyed = True
-                else:
-                    pos = self.proxy_position.towards(self.enemy_start_locations[0], 10)
-                    # Move Stalkers away so new Stalkers can warp in
-                    for stalker in self.units(UnitTypeId.STALKER).filter(
-                            lambda stalker: stalker.is_idle):
-                        stalker.attack(pos)
-            # If there wasn't an attack before
+        if self.defenders:
+            enemies_amount = 0
+            attacking_enemies: Units = None
+            for nexus in self.townhalls:
+                enemies: Units = (self.enemy_units.closer_than(30, nexus) |
+                                  self.enemy_structures.closer_than(30, nexus))
+                if enemies.amount > enemies_amount:
+                    enemies_amount = enemies.amount
+                    attacking_enemies = enemies
+
+            if attacking_enemies:
+                target = enemies.center
+                logger.info(f"Enemies detected, attacking {target}")
+                for stalker in self.defenders:
+                    stalker.attack(target)
             else:
-                pos = self.proxy_position.towards(self.enemy_start_locations[0], 10)
-                # Move Stalkers away so new Stalkers can warp in
-                for stalker in self.units(UnitTypeId.STALKER).filter(
-                        lambda stalker: stalker.is_idle):
+                for stalker in self.defenders.further_than(
+                        20, self.defend_position):
+                    stalker.attack(self.defend_position)
+
+        if self.attackers:
+            # If the enemy's main base is destroyed
+            if self.enemy_main_destroyed():
+                # Kill everything
+                target: Unit = self.find_target()
+                logger.info(f"Attacking {target.name} at {target.position}")
+                for stalker in self.attackers:
+                    stalker.attack(target.position)
+            # If the enemy's main base is not destoryed, and we can attack
+            elif (
+                self.time // 300 > self.attack_amount
+            ):
+                self.attack_amount = self.time // 300
+                target: Point2 = self.enemy_start_locations[0]
+                logger.info(f"Attack {self.attack_amount}, attacking {target}")
+                # Attack
+                await self.chat_send(
+                    f"Starting attack {self.attack_amount}...")
+                for stalker in self.attackers:
+                    stalker.attack(target)
+            else:
+                pos = self.proxy_position.towards(
+                    self.enemy_start_locations[0], 5)
+                for stalker in self.attackers:
                     stalker.attack(pos)
-        # If we can attack
-        elif (
-            self.time // 300 > self.attack_amount
-        ):
-            target = self.find_target()
-            logger.info(f"Attacking {target}")
-            # Attack
-            await self.chat_send(f"Initiating attack {int(self.time // 300)}...")
-            for stalker in self.units(UnitTypeId.STALKER):
-                stalker.attack(target)
 
     async def build_proxy(self):
         """Builds a proxy Pylon if the Warpgate research is a quarter done
@@ -286,9 +321,11 @@ class TooManyStalkersBot(sc2.BotAI):
                 if self.proxy_attempts == 0:
                     pos = self.proxy_position
                 elif self.proxy_attempts > 0:
-                    pos = self.enemy_start_locations[0].towards(
-                        self.game_info.map_center, random.randint(60, 70)).offset(
-                            (random.randint(-10, 10), random.randint(-10, 10)))
+                    pos = self.enemy_start_locations[0]
+                    pos.towards(self.game_info.map_center,
+                                random.randint(60, 70))
+                    pos.offset((random.randint(-10, 10),
+                               random.randint(-10, 10)))
                     self.proxy_position = pos
 
                 await self.build(UnitTypeId.PYLON, near=pos)
@@ -428,7 +465,25 @@ class TooManyStalkersBot(sc2.BotAI):
         Args:
             unit (Unit): the unit that is created
         """
+        # Log to console
         logger.info(f"Unit {unit.name} trained at {unit.position}")
+
+        if unit.type_id == UnitTypeId.STALKER:
+            if self.defenders and self.attackers:
+                defenders_amount = self.defenders.amount \
+                    * self.defend_attack_ratio
+                attackers_amount = self.attackers.amount
+
+                if defenders_amount > attackers_amount:
+                    self.attackers.append(unit)
+                elif defenders_amount < attackers_amount:
+                    self.defenders.append(unit)
+                else:
+                    self.attackers.append(unit)
+            elif self.defenders:
+                self.attackers.append(unit)
+            elif self.attackers:
+                self.defenders.append(unit)
 
     async def on_building_construction_started(self, unit: Unit):
         """Gets called when a building is started building
@@ -465,17 +520,33 @@ class TooManyStalkersBot(sc2.BotAI):
         """Find a target to attack
 
         Returns:
-            Point2: the location to attack
+            Unit: the unit to attack
         """
         # If there are enemy units, return their position
         if self.enemy_units.amount > 0:
-            return self.enemy_units.random.position
+            return self.enemy_units.random
         # If there are enemy structures, return their position
         elif self.enemy_structures.amount > 0:
-            return self.enemy_structures.random.position
+            return self.enemy_structures.random
         # Else just return the enemy start location
         else:
             return self.enemy_start_locations[0]
+
+    async def enemy_main_destroyed(self) -> bool:
+        """Returns if the enemy's main base is destroyed
+
+        Returns:
+            bool: is the enemy's main base destroyed
+        """
+        for townhall in self.TOWNHALLS:
+            if (
+                not self.enemy_structures(townhall).closer_than(
+                    5, self.enemy_start_locations[0])
+                and self.units.closer_than(10, self.enemy_start_locations[0])
+            ):
+                return True
+
+        return False
 
     @ property
     def max_nexuses(self) -> int:
