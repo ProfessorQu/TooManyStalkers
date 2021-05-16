@@ -52,7 +52,7 @@ class TooManyStalkersBot(sc2.BotAI):
             iteration (int): what number step it currently is
         """
         # Send a spirit-breaking message
-        if iteration > 0 and not self.greeted:
+        if iteration > 5 and not self.greeted:
             logger.info("Greeted the enemy")
             self.greeted = True
             await self.chat_send(f"Hello {self.opponent_id}, GL HF")
@@ -91,7 +91,6 @@ class TooManyStalkersBot(sc2.BotAI):
             if nexus.is_idle:
                 if self.workers.amount < self.MAX_WORKERS:
                     if self.can_afford(UnitTypeId.PROBE):
-                        logger.info(f"Unit Nexus trained Probe at location {nexus.position}")
                         nexus.train(UnitTypeId.PROBE)
                     else:
                         break
@@ -113,7 +112,6 @@ class TooManyStalkersBot(sc2.BotAI):
                 position = self.townhalls.ready.random.position.towards(
                     self.game_info.map_center, 10
                 )
-                logger.info(f"Building a Pylon near {position}")
                 await self.build(UnitTypeId.PYLON, near=position)
 
     async def collect_gas(self):
@@ -133,7 +131,6 @@ class TooManyStalkersBot(sc2.BotAI):
                         and not self.already_pending(UnitTypeId.ASSIMILATOR)
                         and self.can_afford(UnitTypeId.ASSIMILATOR)
                     ):
-                        logger.info(f"Building an Assimilator at {vespene.position}")
                         await self.build(UnitTypeId.ASSIMILATOR, vespene)
 
     async def expand(self):
@@ -163,7 +160,6 @@ class TooManyStalkersBot(sc2.BotAI):
                 self.structures(UnitTypeId.GATEWAY).amount < 2
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
-                logger.info(f"Building a Gateway near {pylon.position}")
                 await self.build(UnitTypeId.GATEWAY, near=pylon)
 
             # When the Warpgate finishes, build more Gateways
@@ -174,7 +170,6 @@ class TooManyStalkersBot(sc2.BotAI):
                 < self.max_gateways
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
-                logger.info(f"Building a Gateway near {pylon.position}")
                 await self.build(UnitTypeId.GATEWAY, near=pylon)
 
     async def train_units(self):
@@ -208,7 +203,6 @@ class TooManyStalkersBot(sc2.BotAI):
                             return
 
                         # Warp
-                        logger.info(f"Warping in a Stalker at {placement.position}")
                         warpgate.warp_in(UnitTypeId.STALKER, placement)
             # If we don't have Warpgates
             else:
@@ -216,7 +210,6 @@ class TooManyStalkersBot(sc2.BotAI):
                 for gateway in self.structures(UnitTypeId.GATEWAY)\
                         .filter(lambda gw: gw.is_idle):
 
-                    logger.info(f"Trainig a Stalker at {gateway.position}")
                     # Train a Stalker
                     gateway.train(UnitTypeId.STALKER)
 
@@ -253,7 +246,6 @@ class TooManyStalkersBot(sc2.BotAI):
                         self.enemy_main_destroyed = True
                 else:
                     pos = self.proxy_position.towards(self.enemy_start_locations[0], 10)
-                    logger.info(f"Moving Stalkers to {pos}")
                     # Move Stalkers away so new Stalkers can warp in
                     for stalker in self.units(UnitTypeId.STALKER).filter(
                             lambda stalker: stalker.is_idle):
@@ -261,7 +253,6 @@ class TooManyStalkersBot(sc2.BotAI):
             # If there wasn't an attack before
             else:
                 pos = self.proxy_position.towards(self.enemy_start_locations[0], 10)
-                logger.info(f"Moving Stalkers to {pos}")
                 # Move Stalkers away so new Stalkers can warp in
                 for stalker in self.units(UnitTypeId.STALKER).filter(
                         lambda stalker: stalker.is_idle):
@@ -431,12 +422,21 @@ class TooManyStalkersBot(sc2.BotAI):
                 ):
                     nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
 
-    async def on_building_construction_started(self, unit: Unit):
-        """When the construction of a building gets completed, check if it is the proxy
+    async def on_unit_created(self, unit: Unit):
+        """Gets called when a unit is created
 
         Args:
-            unit (Unit): the building that was completed
+            unit (Unit): the unit that is created
         """
+        logger.info(f"Unit {unit.name} trained at {unit.position}")
+
+    async def on_building_construction_started(self, unit: Unit):
+        """Gets called when a building is started building
+
+        Args:
+            unit (Unit): the building that is started building
+        """
+        logger.info(f"Structure {unit.name} built at {unit.position}")
         # If the structure is a Pylon and in a certain range of the enemy base,
         # It's the proxy Pylon
         if (

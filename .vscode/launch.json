@@ -5,7 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run",
+            "name": "Run - Normal",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/TooManyStalkers/run.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--RealTime"
+            ]
+        },
+        {
+            "name": "Run - Fast",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/TooManyStalkers/run.py",

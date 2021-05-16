@@ -4,6 +4,8 @@ from __init__ import run_ladder_game
 from sc2 import Race, Difficulty
 from sc2.player import Bot, Computer, Human
 
+import argparse
+
 # Load bot
 from bot import TooManyStalkersBot
 
@@ -19,7 +21,16 @@ if __name__ == "__main__":
         result, opponentid = run_ladder_game(bot)
         print(result, " against opponent ", opponentid)
     else:
+        # Parse arguments
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--RealTime', action='store_true', help='Real time flag')
+        args = parser.parse_args()
+
+        # Set some variables
+        realtime = args.RealTime
+        speed = "normal" if realtime else "fast"
+
         # Local game
-        print("Starting local game...")
+        print(f"Starting local game at {speed} speed...")
         sc2.run_game(sc2.maps.get("DeathAura506"),
-                     [bot, computer], realtime=True)
+                     [bot, computer], realtime=realtime)
