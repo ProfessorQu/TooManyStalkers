@@ -23,7 +23,8 @@ if __name__ == "__main__":
     else:
         # Parse arguments
         parser = argparse.ArgumentParser()
-        parser.add_argument('--RealTime', action='store_true', help='Real time flag')
+        parser.add_argument('--RealTime', action='store_true',
+                            help='Real time flag')
         args = parser.parse_args()
 
         # Set some variables

@@ -1,4 +1,5 @@
 import random
+import sys
 
 import sc2
 from sc2.ids.ability_id import AbilityId
@@ -11,6 +12,8 @@ from sc2.units import Units
 from sc2.position import Point2, Point3
 
 from loguru import logger
+
+logger.add(sys.stderr, level="INFO")
 
 
 class TooManyStalkersBot(sc2.BotAI):
@@ -35,47 +38,32 @@ class TooManyStalkersBot(sc2.BotAI):
 
         self.MAX_PROXY_ATTEMPTS = 3
         self.proxy: Unit = None
-        self.proxy_position: Point2 = Point2()
+        self.proxy_position: Point3 = Point3()
         self.proxy_attempts = 0
 
         self.attack_amount = 0
 
-        self.defenders: Units = None
-        self.attackers: Units = None
+        self.defenders: Units = list()
+        self.attackers: Units = list()
         self.defend_attack_ratio = 1/3
-        self.defend_position: Point2 = Point2()
+        self.defend_position: Point3 = Point3()
 
     async def on_before_start(self):
-        proxy_distance = random.randint(60, 70)
-        proxy_offset = (random.randint(-10, 10), random.randint(-10, 10))
+        self.proxy_position = self.get_proxy_location()
+        logger.info(f"Proxy position: {self.proxy_position}")
 
-        self.proxy_position = self.enemy_start_locations[0]
-        self.proxy_position.towards(
-            self.game_info.map_center, proxy_distance)
-        self.proxy_position.offset(proxy_offset)
-
-        defend_distance = random.randint(10, 30)
-        defend_offset_x = random.randint(0, 10)
-        defend_offset_y = random.randint(0, 10)
-
-        if self.townhalls.first.position.x < self.game_info.map_center.x:
-            x_multiplier = 1
-        else:
-            x_multiplier = -1
-
-        if self.townhalls.first.position.y < self.game_info.map_center.y:
-            y_multiplier = 1
-        else:
-            y_multiplier = -1
-
-        defend_offset = (defend_offset_x * x_multiplier,
-                         defend_offset_y * y_multiplier)
-
-        self.defend_position = self.townhalls.first.position
-        self.defend_position.towards(
+        defend_distance = 10
+        defend_position = self.townhalls.first.position
+        defend_position = defend_position.towards(
             self.game_info.map_center, defend_distance)
 
-        self.defend_position.offset(defend_offset)
+        (x, y) = defend_position
+        z = self.get_terrain_z_height(defend_position)
+
+        self.defend_position = Point3((x, y, z))
+        # self.defend_position = Point3(
+        #     (44.58056640625, 132.365478515625, 11.997207641601562))
+        logger.info(f"Defend position: {self.defend_position}")
 
     async def on_step(self, iteration: int):
         """What to do each step
@@ -115,9 +103,10 @@ class TooManyStalkersBot(sc2.BotAI):
         await self.research()
 
     def debug_draw(self):
-        self._client.debug_box2_out(
-            Point3((self.defend_position.x, self.defend_position.y, 0.5)),
-            half_vertex_length=2, color=(255, 255, 0))
+        self._client.debug_sphere_out(
+            self.defend_position, 1, color=(0, 255, 0))
+        self._client.debug_sphere_out(
+            self.proxy_position, 1, color=(255, 0, 0))
 
     async def manage_bases(self):
         """Handle the Chronoboost for each nexus and produce workers
@@ -321,13 +310,11 @@ class TooManyStalkersBot(sc2.BotAI):
                 if self.proxy_attempts == 0:
                     pos = self.proxy_position
                 elif self.proxy_attempts > 0:
-                    pos = self.enemy_start_locations[0]
-                    pos.towards(self.game_info.map_center,
-                                random.randint(60, 70))
-                    pos.offset((random.randint(-10, 10),
-                               random.randint(-10, 10)))
-                    self.proxy_position = pos
+                    pos = self.get_proxy_location()
+                    logger.info(
+                        f"Proxy position changed to: {self.proxy_position}")
 
+                logger.info(f"Building a proxy at {self.proxy_position}")
                 await self.build(UnitTypeId.PYLON, near=pos)
                 self.proxy_attempts += 1
 
@@ -476,14 +463,22 @@ class TooManyStalkersBot(sc2.BotAI):
 
                 if defenders_amount > attackers_amount:
                     self.attackers.append(unit)
+                    logger.info(f"Stalker {unit.tag} added to attackers")
                 elif defenders_amount < attackers_amount:
                     self.defenders.append(unit)
+                    logger.info(f"Stalker {unit.tag} added to defenders")
                 else:
                     self.attackers.append(unit)
+                    logger.info(f"Stalker {unit.tag} added to attackers")
             elif self.defenders:
                 self.attackers.append(unit)
+                logger.info(f"Stalker {unit.tag} added to attackers")
             elif self.attackers:
                 self.defenders.append(unit)
+                logger.info(f"Stalker {unit.tag} added to defenders")
+            else:
+                self.attackers.append(unit)
+                logger.info(f"Stalker {unit.tag} added to attackers")
 
     async def on_building_construction_started(self, unit: Unit):
         """Gets called when a building is started building
@@ -491,7 +486,8 @@ class TooManyStalkersBot(sc2.BotAI):
         Args:
             unit (Unit): the building that is started building
         """
-        logger.info(f"Structure {unit.name} built at {unit.position}")
+        logger.info(
+            f"Structure {unit.name} started building at {unit.position}")
         # If the structure is a Pylon and in a certain range of the enemy base,
         # It's the proxy Pylon
         if (
@@ -500,21 +496,44 @@ class TooManyStalkersBot(sc2.BotAI):
             and self.proxy is None
         ):
             self.proxy = unit
+            self.proxy_position = unit.position3d
 
         # If the structure is a Gateway, rally the units to the ramp
         elif unit.type_id == UnitTypeId.GATEWAY:
             unit(AbilityId.RALLY_BUILDING,
                  self.main_base_ramp.barracks_in_middle)
 
-    async def on_unit_destroyed(self, unit: Unit):
+    async def on_unit_destroyed(self, unit_tag: int):
         """When the building gets destroyed, Check if it is the proxy
 
         Args:
             unit (Unit): the building that was destroyed
         """
         # If the unit destroyed is the proxy, set it to None
-        if unit == self.proxy:
+        if unit_tag == self.proxy.tag:
+            logger.info(f"Proxy {unit_tag} destroyed")
             self.proxy = None
+        else:
+            logger.info(f"{unit_tag} destroyed")
+
+    def get_proxy_location(self) -> Point3:
+        """Returns the new proxy location
+
+        Returns:
+            Point3: the proxy location
+        """
+        proxy_distance = random.randint(60, 70)
+        proxy_offset = (random.randint(-10, 10), random.randint(-10, 10))
+
+        proxy_position = self.enemy_start_locations[0]
+        proxy_position = proxy_position.towards(
+            self.game_info.map_center, proxy_distance)
+        proxy_position.offset(proxy_offset)
+
+        (x, y) = proxy_position
+        z = self.get_terrain_z_height(proxy_position)
+
+        return Point3((x, y, z))
 
     def find_target(self):
         """Find a target to attack
