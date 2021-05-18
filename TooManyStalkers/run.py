@@ -2,7 +2,7 @@ import sc2
 import sys
 from __init__ import run_ladder_game
 from sc2 import Race, Difficulty
-from sc2.player import Bot, Computer, Human
+from sc2.player import Bot, Computer, Human, AIBuild
 
 import argparse
 
@@ -10,7 +10,7 @@ import argparse
 from bot import TooManyStalkersBot
 
 bot = Bot(Race.Protoss, TooManyStalkersBot())
-computer = Computer(Race.Zerg, Difficulty.Medium)
+computer = Computer(Race.Zerg, Difficulty.Medium, AIBuild.Macro)
 human = Human(Race.Zerg)
 
 # Start game
