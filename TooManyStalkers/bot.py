@@ -45,6 +45,7 @@ class TooManyStalkersBot(sc2.BotAI):
         self.proxy_attempts = 0
 
         self.attack_amount = 0
+        self.enemy_main_destroyed_triggerd = False
 
         self.defenders: Units = Units([], self)
         self.attackers: Units = Units([], self)
@@ -52,7 +53,7 @@ class TooManyStalkersBot(sc2.BotAI):
 
         self.defend_position: Point3 = Point3()
 
-        self.DEBUG = True
+        self.DEBUG = False
         self.debug_once = True
 
     async def on_before_start(self):
@@ -118,15 +119,15 @@ class TooManyStalkersBot(sc2.BotAI):
 
         if self.attackers:
             for stalker in self.units.tags_in(self.attackers):
-                self._client.debug_box2_out(stalker,
-                                            half_vertex_length=0.4,
-                                            color=(255, 255, 0))
+                self._client.debug_text_world("Attacker",
+                                              stalker,
+                                              color=(255, 255, 0))
 
         if self.defenders:
             for stalker in self.units.tags_in(self.defenders):
-                self._client.debug_box2_out(stalker,
-                                            half_vertex_length=0.4,
-                                            color=(255, 0, 255))
+                self._client.debug_text_world("Defender",
+                                              stalker,
+                                              color=(255, 0, 255))
 
     async def debug(self):
         if self.DEBUG and self.debug_once:
@@ -297,10 +298,10 @@ class TooManyStalkersBot(sc2.BotAI):
             if await self.enemy_main_destroyed():
                 # Kill everything
                 target: Point2 = self.find_target()
-                logger.info(f"Attacking {target} position")
+                logger.info(f"Attacking {target.name}")
                 for stalker in self.units.tags_in(self.attackers).filter(
                         lambda s: s.is_idle):
-                    stalker.attack(target)
+                    stalker.attack(target.position)
             # If the enemy's main base is not destoryed, and we can attack
             elif (
                 self.time // 300 > self.attack_amount
@@ -483,26 +484,14 @@ class TooManyStalkersBot(sc2.BotAI):
         """
         # Log to console
         logger.info(f"Unit {unit.name} trained at {unit.position}")
-        tag = unit.tag
 
         if unit.type_id == UnitTypeId.STALKER:
-            if self.defenders and self.attackers:
-                defenders_amount = self.defenders.amount \
-                    * self.defend_attack_ratio
-                attackers_amount = self.attackers.amount
+            tag = unit.tag
 
-                if defenders_amount > attackers_amount:
-                    self.attackers.append(tag)
-                elif defenders_amount < attackers_amount:
-                    self.defenders.append(tag)
-                else:
-                    self.attackers.append(tag)
-            elif self.defenders:
+            if self.next_stalker_is_attacker():
                 self.attackers.append(tag)
-            elif self.attackers:
+            elif self.next_stalker_is_defender:
                 self.defenders.append(tag)
-            else:
-                self.attackers.append(tag)
 
             if tag in self.attackers:
                 pos = self.proxy_position.towards(
@@ -540,7 +529,7 @@ class TooManyStalkersBot(sc2.BotAI):
                  self.main_base_ramp.barracks_in_middle)
 
     async def on_unit_destroyed(self, unit_tag: int):
-        """When the building gets destroyed, Check if it is the proxy
+        """When the building gets destroyed, check if it is the proxy
 
         Args:
             unit (Unit): the building that was destroyed
@@ -548,8 +537,12 @@ class TooManyStalkersBot(sc2.BotAI):
         # If the unit destroyed is the proxy, set it to None
         if self.proxy is None:
             logger.info(f"Proxy {unit_tag} was destroyed")
-        else:
-            logger.info(f"{unit_tag} destroyed")
+
+        if unit_tag in self.attackers:
+            self.attackers.remove(unit_tag)
+
+        if unit_tag in self.defenders:
+            self.defenders.remove(unit_tag)
 
     def get_proxy_location(self) -> Point3:
         """Returns the new proxy location
@@ -586,19 +579,65 @@ class TooManyStalkersBot(sc2.BotAI):
         else:
             return self.enemy_start_locations[0]
 
+    def next_stalker_is_attacker(self) -> bool:
+        """Returns True if the next Stalker should be an attacker
+
+        Returns:
+            bool: is the next Stalker an attacker
+        """
+        if self.defenders and self.attackers:
+            defenders_amount = self.defenders.amount * self.defend_attack_ratio
+            attackers_amount = self.attackers.amount
+            if defenders_amount > attackers_amount:
+                return True
+            elif defenders_amount < attackers_amount:
+                return False
+            else:
+                return True
+
+        elif self.defenders:
+            return True
+        elif self.attackers:
+            return False
+        else:
+            return True
+
+    def next_stalker_is_defender(self) -> bool:
+        """Returns True if the next Stalker should be a defender
+
+        Returns:
+            bool: is the next Stalker a defender
+        """
+        return not self.next_stalker_is_attacker()
+
     async def enemy_main_destroyed(self) -> bool:
-        """Returns if the enemy's main base is destroyed
+        """Returns True if the enemy's main base is destroyed
 
         Returns:
             bool: is the enemy's main base destroyed
         """
-        for townhall in TOWNHALLS:
-            if (
-                not self.enemy_structures(townhall).closer_than(
-                    5, self.enemy_start_locations[0])
-                and self.units.closer_than(10, self.enemy_start_locations[0])
-            ):
+        if self.enemy_main_destroyed_triggerd:
+            return True
+
+        if (
+            self.units.closer_than(10, self.enemy_start_locations[0])
+        ):
+            townhalls = 0
+            for townhall in TOWNHALLS:
+                if (
+                    not self.enemy_structures(townhall).closer_than(
+                        5, self.enemy_start_locations[0])
+                ):
+                    townhalls += 1
+
+            if townhalls == len(TOWNHALLS):
+                await self.chat_send("Your main base is destroyed, "
+                                     "what are you going to do now?")
+                logger.info(f"Townhall: {townhall} is destroyed")
+                self.enemy_main_destroyed_triggerd = True
                 return True
+
+            return False
 
         return False
 
