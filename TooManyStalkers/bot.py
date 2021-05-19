@@ -16,6 +16,13 @@ from loguru import logger
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
+TOWNHALLS = {
+    UnitTypeId.COMMANDCENTER, UnitTypeId.COMMANDCENTERFLYING,
+    UnitTypeId.ORBITALCOMMAND, UnitTypeId.ORBITALCOMMANDFLYING,
+    UnitTypeId.PLANETARYFORTRESS, UnitTypeId.HATCHERY,
+    UnitTypeId.LAIR, UnitTypeId.HIVE, UnitTypeId.NEXUS
+}
+
 
 class TooManyStalkersBot(sc2.BotAI):
     def __init__(self):
@@ -27,13 +34,6 @@ class TooManyStalkersBot(sc2.BotAI):
         self.UPGRADES = ["PROTOSSGROUNDWEAPONSLEVEL",
                          "PROTOSSGROUNDWEAPONSLEVEL",
                          "PROTOSSSHIELDSLEVEL"]
-
-        self.TOWNHALLS = {
-            UnitTypeId.COMMANDCENTER, UnitTypeId.COMMANDCENTERFLYING,
-            UnitTypeId.ORBITALCOMMAND, UnitTypeId.ORBITALCOMMANDFLYING,
-            UnitTypeId.PLANETARYFORTRESS, UnitTypeId.HATCHERY,
-            UnitTypeId.LAIR, UnitTypeId.HIVE, UnitTypeId.NEXUS
-        }
 
         self.greeted = False
 
@@ -52,7 +52,8 @@ class TooManyStalkersBot(sc2.BotAI):
 
         self.defend_position: Point3 = Point3()
 
-        self.should_debug = True
+        self.DEBUG = True
+        self.debug_once = True
 
     async def on_before_start(self):
         self.proxy_position = self.get_proxy_location()
@@ -83,9 +84,8 @@ class TooManyStalkersBot(sc2.BotAI):
             self.greeted = True
             await self.chat_send(f"Hello {self.opponent_id}, GL HF")
 
-        self.debug_draw()
-
         await self.debug()
+        await self.debug_draw()
 
         # Distribute Probes
         await self.distribute_workers()
@@ -110,18 +110,30 @@ class TooManyStalkersBot(sc2.BotAI):
         await self.build_research_structures()
         await self.research()
 
-    def debug_draw(self):
+    async def debug_draw(self):
         self._client.debug_sphere_out(
             self.defend_position, 1, color=(0, 255, 0))
         self._client.debug_sphere_out(
             self.proxy_position, 1, color=(255, 0, 0))
 
+        if self.attackers:
+            for stalker in self.units.tags_in(self.attackers):
+                self._client.debug_box2_out(stalker,
+                                            half_vertex_length=0.4,
+                                            color=(255, 255, 0))
+
+        if self.defenders:
+            for stalker in self.units.tags_in(self.defenders):
+                self._client.debug_box2_out(stalker,
+                                            half_vertex_length=0.4,
+                                            color=(255, 0, 255))
+
     async def debug(self):
-        if self.should_debug:
+        if self.DEBUG and self.debug_once:
             logger.info("Created 5 Stalkers")
             await self._client.debug_create_unit(
                 [[UnitTypeId.STALKER, 5, self.main.position, 1]])
-            self.should_debug = False
+            self.debug_once = False
 
     async def manage_bases(self):
         """Handle the Chronoboost for each nexus and produce workers
@@ -274,10 +286,10 @@ class TooManyStalkersBot(sc2.BotAI):
             if attacking_enemies:
                 target = enemies.center
                 logger.info(f"Enemies detected, attacking {target}")
-                for stalker in self.defenders:
+                for stalker in self.units.tags_in(self.defenders):
                     stalker.attack(target)
             else:
-                for stalker in self.defenders:
+                for stalker in self.units.tags_in(self.defenders):
                     stalker.attack(self.defend_position)
 
         if self.attackers:
@@ -286,7 +298,8 @@ class TooManyStalkersBot(sc2.BotAI):
                 # Kill everything
                 target: Point2 = self.find_target()
                 logger.info(f"Attacking {target} position")
-                for stalker in self.attackers:
+                for stalker in self.units.tags_in(self.attackers).filter(
+                        lambda s: s.is_idle):
                     stalker.attack(target)
             # If the enemy's main base is not destoryed, and we can attack
             elif (
@@ -299,18 +312,14 @@ class TooManyStalkersBot(sc2.BotAI):
                 # Attack
                 await self.chat_send(
                     f"Starting attack {int(self.attack_amount)}...")
-                for stalker in self.attackers:
+                for stalker in self.units.tags_in(self.attackers):
                     stalker.attack(target)
             else:
                 pos = self.proxy_position.towards(
                     self.enemy_start_locations[0], 10)
-                for stalker in self.attackers:
-                    # TODO: Fix
-                    if stalker.position.is_closer_than(10, self.main.position):
-                        logger.info(f"Sending Stalker back to proxy, "
-                                    "distance: "
-                                    f"{stalker.position.distance_to_point2(self.main.position)}")
-                        stalker.attack(pos)
+                for stalker in self.units.tags_in(self.attackers).filter(
+                        lambda s: s.is_idle):
+                    stalker.attack(pos)
 
     async def build_proxy(self):
         """Builds a proxy Pylon if the Warpgate research is a quarter done
@@ -474,6 +483,7 @@ class TooManyStalkersBot(sc2.BotAI):
         """
         # Log to console
         logger.info(f"Unit {unit.name} trained at {unit.position}")
+        tag = unit.tag
 
         if unit.type_id == UnitTypeId.STALKER:
             if self.defenders and self.attackers:
@@ -482,24 +492,29 @@ class TooManyStalkersBot(sc2.BotAI):
                 attackers_amount = self.attackers.amount
 
                 if defenders_amount > attackers_amount:
-                    self.attackers.append(unit)
+                    self.attackers.append(tag)
                 elif defenders_amount < attackers_amount:
-                    self.defenders.append(unit)
+                    self.defenders.append(tag)
                 else:
-                    self.attackers.append(unit)
+                    self.attackers.append(tag)
             elif self.defenders:
-                self.attackers.append(unit)
+                self.attackers.append(tag)
             elif self.attackers:
-                self.defenders.append(unit)
+                self.defenders.append(tag)
             else:
-                self.attackers.append(unit)
+                self.attackers.append(tag)
 
-            if unit in self.attackers:
+            if tag in self.attackers:
+                pos = self.proxy_position.towards(
+                    self.enemy_start_locations[0], 10)
                 logger.info(f"Stalker added as attacker, attack/defend ratio: "
                             f"{self.attackers.amount}/{self.defenders.amount}")
-            elif unit in self.defenders:
+            elif tag in self.defenders:
+                pos = self.defend_position
                 logger.info(f"Stalker added as defender, attack/defend ratio: "
                             f"{self.attackers.amount}/{self.defenders.amount}")
+
+            unit.attack(pos)
 
     async def on_building_construction_started(self, unit: Unit):
         """Gets called when a building is started building
@@ -577,7 +592,7 @@ class TooManyStalkersBot(sc2.BotAI):
         Returns:
             bool: is the enemy's main base destroyed
         """
-        for townhall in self.TOWNHALLS:
+        for townhall in TOWNHALLS:
             if (
                 not self.enemy_structures(townhall).closer_than(
                     5, self.enemy_start_locations[0])
