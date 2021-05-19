@@ -49,7 +49,9 @@ class TooManyStalkersBot(sc2.BotAI):
 
         self.defenders: Units = Units([], self)
         self.attackers: Units = Units([], self)
-        self.defend_attack_ratio = 3/1
+        self.attack_defend_ratio = 4/1
+
+        self.wall_unit: Unit = None
 
         self.defend_position: Point3 = Point3()
 
@@ -129,6 +131,12 @@ class TooManyStalkersBot(sc2.BotAI):
                                               stalker,
                                               color=(255, 0, 255))
 
+        if self.wall_unit:
+            self.wall_unit = self.units.tags_in([self.wall_unit.tag])[0]
+            self._client.debug_text_world("Wall-off",
+                                          self.wall_unit,
+                                          color=(255, 255, 255))
+
     async def debug(self):
         if self.DEBUG and self.debug_once:
             logger.info("Created 5 Stalkers")
@@ -154,6 +162,14 @@ class TooManyStalkersBot(sc2.BotAI):
     async def build_pylons(self):
         """Build pylons if the supply is too low
         """
+        wall_pylon = self.main_base_ramp.protoss_wall_pylon
+        if (
+            await self.can_place_single(UnitTypeId.PYLON, wall_pylon)
+            and self.can_afford(UnitTypeId.PYLON)
+        ):
+            await self.build(UnitTypeId.PYLON,
+                             near=wall_pylon, placement_step=3)
+
         # If there is less than 8 supply remaining, build a Pylon
         if (
             self.supply_left <= 8
@@ -168,7 +184,8 @@ class TooManyStalkersBot(sc2.BotAI):
                 position = self.townhalls.ready.random.position.towards(
                     self.game_info.map_center, 10
                 )
-                await self.build(UnitTypeId.PYLON, near=position)
+                await self.build(UnitTypeId.PYLON,
+                                 near=position, placement_step=3)
 
     async def collect_gas(self):
         """Collect Vespene Gas
@@ -187,7 +204,8 @@ class TooManyStalkersBot(sc2.BotAI):
                         and not self.already_pending(UnitTypeId.ASSIMILATOR)
                         and self.can_afford(UnitTypeId.ASSIMILATOR)
                     ):
-                        await self.build(UnitTypeId.ASSIMILATOR, vespene)
+                        await self.build(UnitTypeId.ASSIMILATOR,
+                                         near=vespene, placement_step=3)
 
     async def expand(self):
         """Expand if allowed
@@ -204,8 +222,18 @@ class TooManyStalkersBot(sc2.BotAI):
     async def build_unit_structures(self):
         """Build Gateways
         """
+        wall_buildings = self.main_base_ramp.protoss_wall_buildings
         # If we have a Pylon
         if self.structures(UnitTypeId.PYLON).ready.exists:
+            for wall_building in wall_buildings:
+                if (
+                    await self.can_place_single(
+                        UnitTypeId.GATEWAY, wall_building)
+                    and self.can_afford(UnitTypeId.GATEWAY)
+                ):
+                    await self.build(UnitTypeId.GATEWAY,
+                                     near=wall_building, placement_step=3)
+
             # Select a random Pylon, which is not the proxy Pylon
             pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
             while pylon == self.proxy:
@@ -216,7 +244,8 @@ class TooManyStalkersBot(sc2.BotAI):
                 self.structures(UnitTypeId.GATEWAY).amount < 2
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
-                await self.build(UnitTypeId.GATEWAY, near=pylon)
+                await self.build(UnitTypeId.GATEWAY,
+                                 near=pylon, placement_step=3)
 
             # When the Warpgate finishes, build more Gateways
             if (
@@ -226,7 +255,8 @@ class TooManyStalkersBot(sc2.BotAI):
                 < self.max_gateways
                 and self.can_afford(UnitTypeId.GATEWAY)
             ):
-                await self.build(UnitTypeId.GATEWAY, near=pylon)
+                await self.build(UnitTypeId.GATEWAY,
+                                 near=pylon, placement_step=3)
 
     async def train_units(self):
         """Train Stalkers from Gateways and warp them in with Warpgates
@@ -283,6 +313,10 @@ class TooManyStalkersBot(sc2.BotAI):
     async def attack(self):
         """Attack and defend
         """
+
+        if self.wall_unit is not None:
+            pos = self.main_base_ramp.protoss_wall_warpin
+            self.wall_unit.move(pos)
 
         if self.defenders:
             enemies_amount = 0
@@ -355,7 +389,8 @@ class TooManyStalkersBot(sc2.BotAI):
                         f"Proxy position changed to: {self.proxy_position}")
 
                 logger.info(f"Building a proxy at {self.proxy_position}")
-                await self.build(UnitTypeId.PYLON, near=pos)
+                await self.build(UnitTypeId.PYLON,
+                                 near=pos, placement_step=3)
                 self.proxy_attempts += 1
 
     async def build_research_structures(self):
@@ -375,7 +410,8 @@ class TooManyStalkersBot(sc2.BotAI):
                     UnitTypeId.CYBERNETICSCORE)
                 and self.can_afford(UnitTypeId.CYBERNETICSCORE)
             ):
-                await self.build(UnitTypeId.CYBERNETICSCORE, near=pylon)
+                await self.build(UnitTypeId.CYBERNETICSCORE,
+                                 near=pylon, placement_step=3)
 
             # Build a Forge after the Cybernetics Core
             if (
@@ -383,7 +419,8 @@ class TooManyStalkersBot(sc2.BotAI):
                 and not self.structures(UnitTypeId.FORGE)
                 and self.can_afford(UnitTypeId.FORGE)
             ):
-                await self.build(UnitTypeId.FORGE, near=pylon)
+                await self.build(UnitTypeId.FORGE,
+                                 near=pylon, placement_step=3)
 
             # If the Shields upgrade is researching, build a Twilight Council
             if (
@@ -392,7 +429,8 @@ class TooManyStalkersBot(sc2.BotAI):
                 and not self.structures(UnitTypeId.TWILIGHTCOUNCIL)
                 and self.can_afford(UnitTypeId.TWILIGHTCOUNCIL)
             ):
-                await self.build(UnitTypeId.TWILIGHTCOUNCIL, near=pylon)
+                await self.build(UnitTypeId.TWILIGHTCOUNCIL,
+                                 near=pylon, placement_step=3)
 
     async def research(self):
         """Research Warpgates, Weapons, Armor and Shields
@@ -500,8 +538,11 @@ class TooManyStalkersBot(sc2.BotAI):
 
             if self.next_stalker_is_attacker():
                 self.attackers.append(tag)
-            elif self.next_stalker_is_defender:
-                self.defenders.append(tag)
+            elif self.next_stalker_is_defender():
+                if self.wall_unit is None:
+                    self.wall_unit = unit
+                else:
+                    self.defenders.append(tag)
 
             if tag in self.attackers:
                 pos = self.proxy_position.towards(
@@ -511,6 +552,10 @@ class TooManyStalkersBot(sc2.BotAI):
             elif tag in self.defenders:
                 pos = self.defend_position
                 logger.info(f"Stalker added as defender, attack/defend ratio: "
+                            f"{self.attackers.amount}/{self.defenders.amount}")
+            elif tag == self.wall_unit.tag:
+                pos = self.main_base_ramp.protoss_wall_warpin
+                logger.info(f"Stalker added as wall-off, attack/defend ratio: "
                             f"{self.attackers.amount}/{self.defenders.amount}")
 
             unit.attack(pos)
@@ -598,7 +643,7 @@ class TooManyStalkersBot(sc2.BotAI):
             bool: is the next Stalker an attacker
         """
         if self.defenders and self.attackers:
-            defenders_amount = self.defenders.amount * self.defend_attack_ratio
+            defenders_amount = self.defenders.amount * self.attack_defend_ratio
             attackers_amount = self.attackers.amount
             if defenders_amount > attackers_amount:
                 return True
