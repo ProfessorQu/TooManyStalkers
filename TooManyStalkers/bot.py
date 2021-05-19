@@ -243,13 +243,23 @@ class TooManyStalkersBot(sc2.BotAI):
                     abilities = await self.get_available_abilities(warpgate)
 
                     if AbilityId.WARPGATETRAIN_STALKER in abilities:
-                        # If there is a proxy, warp them there
-                        if self.proxy is not None:
-                            pos = self.proxy.position
-                        # If there is not a proxy, warp them there
-                        else:
-                            pos = self.structures(
-                                UnitTypeId.PYLON).ready.random.position
+                        if self.next_stalker_is_attacker():
+                            # If there is a proxy, warp them there
+                            if self.proxy is not None:
+                                pos = self.proxy.position
+                            # If there is not a proxy, warp them there
+                            else:
+                                pos = self.structures(
+                                    UnitTypeId.PYLON).ready.random.position
+                        elif self.next_stalker_is_defender():
+                            pylon = self.structures(
+                                UnitTypeId.PYLON).ready.random
+
+                            while pylon == self.proxy:
+                                pylon = self.structures(
+                                    UnitTypeId.PYLON).ready.random
+
+                            pos = pylon.position
 
                         placement = await self.find_placement(
                             AbilityId.WARPGATETRAIN_STALKER, pos,
