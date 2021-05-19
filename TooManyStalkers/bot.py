@@ -539,9 +539,11 @@ class TooManyStalkersBot(sc2.BotAI):
             logger.info(f"Proxy {unit_tag} was destroyed")
 
         if unit_tag in self.attackers:
+            logger.info(f"Attack Stalker {unit_tag} was killed")
             self.attackers.remove(unit_tag)
 
         if unit_tag in self.defenders:
+            logger.info(f"Defense Stalker {unit_tag} was killed")
             self.defenders.remove(unit_tag)
 
     def get_proxy_location(self) -> Point3:
