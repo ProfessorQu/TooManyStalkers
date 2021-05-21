@@ -1,15 +1,35 @@
 # TooManyStalkers
 Did you ever think: "I wish there were more Stalkers"? Well, now there's too many!
 
-[The github repository](https://github.com/ProfessorQu/TooManyStalkers)
+[The Github repository](https://github.com/ProfessorQu/TooManyStalkers)
+The [bot](https://sc2ai.net/bots/294/) is published on [sc2aiarena](https://sc2ai.net).
 
 Made with the [python-sc2 library](https://github.com/BurnySc2/python-sc2), maintained by [BurnsySc2](https://github.com/BurnySc2/)
 
 ## Strategy
-The bot creates a Pylon close to the enemy's base,
-While the bot is researching Warpgate,
-It also researches +1 Weapons, Armor and Shields (later +2 and even later +3),
-Then it warps in Stalkers to that Pylon,
-And finally every 5 minutes it attacks,
+### Stalker Production
+As soon as a Gateway is finished, it will train 1 Zealot. Which will be complete the wall-off.
+Also what will happen when a Gateway is finished is that Assimilators will be built to be able to build Stalkers.
+After the 1 Zealot it will just train as many Stalkers as it can (once the Cybernetics Core is completed).
+And as soon as the Warpgate research is finished it will warp in Stalkers: defensive Stalkers near the main base and offensive Stalkers at the proxy Pylon.
+The Nexus' Chronoboost is also preserved to research Warpgates quicker.
 
-All while breaking the other player/bot's spirit with chat messages
+### Defense
+The bot walls off the entrance to the main base with 2 Gateways and 1 Zealot.
+After doing so it will put a maximum of 3 Photon Cannons at the back of the main base.
+The for every 6 attacking Stalkers there will be 1 defensive Stalker. Defensive Stalkers chase any opponents away from the main base.
+The defensive Stalkers, when they have no target, will also sit at the back of the main base.
+
+### Offense
+When the Warpgate research is a quarter done (25%) a Probe will be sent out to build a proxy Pylon.
+Then Stalkers will be sent to guard the proxy until it's time to attack.
+And it's time to attack every 5 minutes.
+
+### Strenghts
+Stalkers are actually pretty good units. If it's the only unit you have then perhaps not, but it's a solid all around unit:
+They are quite fast,
+And they have ranged attacks, so they can attack air units.
+
+### Weaknesses
+Any counter to Stalkers really: because the bot only trains Stalkers (and 1 Zealot) any units that counter it will absolutely destroy the bot's army.
+Stalker counters include: Immortals, Marauders, Siege Tanks, Roaches and Hydralisks.
