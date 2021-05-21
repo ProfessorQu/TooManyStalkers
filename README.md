@@ -1,4 +1,6 @@
 # TooManyStalkers
+This is a [Starcraft 2](https://starcraft2.com/en-us/) bot that I made in one week and then refined.
+
 Did you ever think: "I wish there were more Stalkers"? Well, now there's too many!
 
 [The Github repository](https://github.com/ProfessorQu/TooManyStalkers).
