@@ -54,6 +54,8 @@ class TooManyStalkersBot(sc2.BotAI):
         self.wall_unit: Unit = None
 
         self.defend_position: Point3 = Point3()
+        self.cannon_pylon: Unit = None
+        self.MAX_PHOTON_CANNONS = 3
 
         self.DEBUG = False
         self.debug_once = True
@@ -101,6 +103,8 @@ class TooManyStalkersBot(sc2.BotAI):
         await self.build_pylons()
         await self.collect_gas()
 
+        await self.build_cannons()
+
         # Build Gateways, train Stalkers, attack
         await self.build_unit_structures()
         await self.train_units()
@@ -118,6 +122,10 @@ class TooManyStalkersBot(sc2.BotAI):
             self.defend_position, 1, color=(0, 255, 0))
         self._client.debug_sphere_out(
             self.proxy_position, 1, color=(255, 0, 0))
+
+        if self.cannon_pylon:
+            self._client.debug_sphere_out(
+                self.cannon_pylon.position3d, 1, color=(255, 255, 255))
 
         if self.attackers:
             for stalker in self.units.tags_in(self.attackers):
@@ -169,6 +177,15 @@ class TooManyStalkersBot(sc2.BotAI):
         ):
             await self.build(UnitTypeId.PYLON,
                              near=wall_pylon, placement_step=3)
+
+        cannon_pylon_pos = self.defend_position.towards(
+            self.enemy_start_locations[0], -2)
+        if (
+            await self.can_place_single(UnitTypeId.PYLON, cannon_pylon_pos)
+            and self.can_afford(UnitTypeId.PYLON)
+        ):
+            await self.build(UnitTypeId.PYLON,
+                             near=cannon_pylon_pos, placement_step=3)
 
         # If there is less than 8 supply remaining, build a Pylon
         if (
@@ -236,7 +253,7 @@ class TooManyStalkersBot(sc2.BotAI):
 
             # Select a random Pylon, which is not the proxy Pylon
             pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
-            while pylon == self.proxy:
+            while pylon == self.proxy or pylon == self.cannon_pylon:
                 pylon = self.structures(UnitTypeId.PYLON).ready.random
 
             # Build 2 Gateways initially
@@ -261,6 +278,35 @@ class TooManyStalkersBot(sc2.BotAI):
     async def train_units(self):
         """Train Stalkers from Gateways and warp them in with Warpgates
         """
+        if (
+            self.wall_unit is None
+            and self.can_afford(UnitTypeId.ZEALOT)
+            and self.structures(UnitTypeId.GATEWAY).ready.exists
+            and not self.already_pending(UnitTypeId.ZEALOT)
+        ):
+            if self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1:
+                warpgate = self.structures(UnitTypeId.WARPGATE).ready.first
+
+                abilities = await self.get_available_abilities(warpgate)
+
+                if AbilityId.WARPGATETRAIN_ZEALOT in abilities:
+                    pylon = self.structures(UnitTypeId.PYLON).ready.random
+
+                    while pylon == self.proxy or pylon == self.cannon_pylon:
+                        pylon = self.structures(UnitTypeId.PYLON).ready.random
+
+                    pos = pylon.position
+
+                    placement = await self.find_placement(
+                        AbilityId.WARPGATETRAIN_STALKER, pos,
+                        placement_step=3)
+
+                    if placement:
+                        warpgate.warp_in(UnitTypeId.STALKER, placement)
+            else:
+                gateway = self.structures(UnitTypeId.GATEWAY).ready.first
+                gateway.train(UnitTypeId.ZEALOT)
+
         # If we can afford a Stalker, train or warp them in
         if self.can_afford(UnitTypeId.STALKER):
             # If we have Warpgates, warp them
@@ -285,7 +331,10 @@ class TooManyStalkersBot(sc2.BotAI):
                             pylon = self.structures(
                                 UnitTypeId.PYLON).ready.random
 
-                            while pylon == self.proxy:
+                            while (
+                                pylon == self.proxy
+                                or pylon == self.cannon_pylon
+                            ):
                                 pylon = self.structures(
                                     UnitTypeId.PYLON).ready.random
 
@@ -296,11 +345,10 @@ class TooManyStalkersBot(sc2.BotAI):
                             placement_step=3)
 
                         # If there is not placement position
-                        if placement is None:
-                            return
+                        if placement:
+                            # Warp
+                            warpgate.warp_in(UnitTypeId.STALKER, placement)
 
-                        # Warp
-                        warpgate.warp_in(UnitTypeId.STALKER, placement)
             # If we don't have Warpgates
             else:
                 # Go over all Gateways
@@ -316,7 +364,8 @@ class TooManyStalkersBot(sc2.BotAI):
 
         if self.wall_unit is not None:
             pos = self.main_base_ramp.protoss_wall_warpin
-            self.wall_unit.move(pos)
+            if self.wall_unit.distance_to(pos) > 0:
+                self.wall_unit.move(pos)
 
         if self.defenders:
             enemies_amount = 0
@@ -393,6 +442,17 @@ class TooManyStalkersBot(sc2.BotAI):
                                  near=pos, placement_step=3)
                 self.proxy_attempts += 1
 
+    async def build_cannons(self):
+        if (
+            self.structures(UnitTypeId.FORGE).ready.exists
+            and self.structures(
+                UnitTypeId.PHOTONCANNON).amount < self.MAX_PHOTON_CANNONS
+            and self.cannon_pylon is not None
+            and self.can_afford(UnitTypeId.PHOTONCANNON)
+            and self.already_pending(UnitTypeId.PHOTONCANNON) == 0
+        ):
+            await self.build(UnitTypeId.PHOTONCANNON, near=self.cannon_pylon)
+
     async def build_research_structures(self):
         """Build structures to research from
         """
@@ -400,7 +460,7 @@ class TooManyStalkersBot(sc2.BotAI):
         if self.structures(UnitTypeId.PYLON).ready.exists:
             # Select a random one that is not the proxy Pylon
             pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
-            while pylon == self.proxy:
+            while pylon == self.proxy or pylon == self.cannon_pylon:
                 pylon = self.structures(UnitTypeId.PYLON).ready.random
 
             # Build a Cybernetics Core if the bot can
@@ -533,16 +593,19 @@ class TooManyStalkersBot(sc2.BotAI):
         # Log to console
         logger.info(f"Unit {unit.name} trained at {unit.position}")
 
+        if (
+            unit.type_id == UnitTypeId.ZEALOT
+            and self.wall_unit is None
+        ):
+            self.wall_unit = unit
+
         if unit.type_id == UnitTypeId.STALKER:
             tag = unit.tag
 
             if self.next_stalker_is_attacker():
                 self.attackers.append(tag)
             elif self.next_stalker_is_defender():
-                if self.wall_unit is None:
-                    self.wall_unit = unit
-                else:
-                    self.defenders.append(tag)
+                self.defenders.append(tag)
 
             if tag in self.attackers:
                 pos = self.proxy_position.towards(
@@ -555,7 +618,7 @@ class TooManyStalkersBot(sc2.BotAI):
                             f"{self.attackers.amount}/{self.defenders.amount}")
             elif tag == self.wall_unit.tag:
                 pos = self.main_base_ramp.protoss_wall_warpin
-                logger.info(f"Stalker added as wall-off, attack/defend ratio: "
+                logger.info(f"Zealot added as wall-off, attack/defend ratio: "
                             f"{self.attackers.amount}/{self.defenders.amount}")
 
             unit.attack(pos)
@@ -572,16 +635,29 @@ class TooManyStalkersBot(sc2.BotAI):
         # It's the proxy Pylon
         if (
             unit.type_id == UnitTypeId.PYLON
-            and unit.distance_to(self.enemy_start_locations[0]) < 80
-            and self.proxy is None
         ):
-            self.proxy = unit
-            self.proxy_position = unit.position3d
+            if (
+                unit.distance_to(self.enemy_start_locations[0]) < 80
+                and self.proxy is None
+            ):
+
+                self.proxy = unit
+                self.proxy_position = unit.position3d
+            elif (
+                unit.distance_to(self.defend_position) < 3
+                and self.cannon_pylon is None
+            ):
+                self.cannon_pylon = unit
 
         # If the structure is a Gateway, rally the units to the ramp
         elif unit.type_id == UnitTypeId.GATEWAY:
-            unit(AbilityId.RALLY_BUILDING,
-                 self.main_base_ramp.barracks_in_middle)
+            x = (self._game_info.map_center.x -
+                 unit.position.x) // 10
+            y = -4 if unit.position.y < self._game_info.map_center.y else 4
+            center_pos = (x, y)
+
+            pos = self.main_base_ramp.barracks_in_middle.offset(center_pos)
+            unit(AbilityId.RALLY_BUILDING, pos)
 
     async def on_unit_destroyed(self, unit_tag: int):
         """When the building gets destroyed, check if it is the proxy
