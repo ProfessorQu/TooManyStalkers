@@ -3,7 +3,7 @@ Did you ever think: "I wish there were more Stalkers"? Well, now there's too man
 
 [The Github repository](https://github.com/ProfessorQu/TooManyStalkers).
 
-The [bot](https://sc2ai.net/bots/294/) is published on [sc2aiarena](https://sc2ai.net).
+I have published the [TooManyStalkers](https://sc2ai.net/bots/294/) bot on [sc2aiarena](https://sc2ai.net).
 
 Made with the [python-sc2 library](https://github.com/BurnySc2/python-sc2), maintained by [BurnsySc2](https://github.com/BurnySc2/)
 
