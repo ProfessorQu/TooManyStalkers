@@ -175,10 +175,12 @@ class TooManyStalkersBot(sc2.BotAI):
 
         # If there is a wall-unit, put text on their position
         if self.wall_unit:
-            self.wall_unit = self.units.tags_in([self.wall_unit.tag])[0]
-            self._client.debug_text_world("Wall-off",
-                                          self.wall_unit,
-                                          color=(255, 255, 255))
+            wall_unit = self.units.tags_in([self.wall_unit.tag])
+            if len(wall_unit) > 0:
+                self.wall_unit = wall_unit[0]
+                self._client.debug_text_world("Wall-off",
+                                              self.wall_unit,
+                                              color=(255, 255, 255))
 
         if self.main:
             self.main = self.townhalls.first
