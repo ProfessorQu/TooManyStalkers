@@ -56,7 +56,7 @@ class TooManyStalkersBot(sc2.BotAI):
         self.expand_amount: int = 0
 
         # The defending Stalkers, the wall-off unit, and the position to defend
-        self.defenders: Units = Units([], self)
+        self.bases_defenders: dict = {}
         self.wall_unit: Unit = None
 
         # The attacking Stalkers, how many attacks have happend
@@ -151,12 +151,13 @@ class TooManyStalkersBot(sc2.BotAI):
                                               stalker,
                                               color=(255, 255, 0))
 
-        # If there are defenders, put text on their position
-        if self.defenders:
-            for stalker in self.units.tags_in(self.defenders):
-                self._client.debug_text_world("Defender",
-                                              stalker,
-                                              color=(255, 0, 255))
+        for base_defenders in self.bases_defenders.values():
+            # If there are defenders, put text on their position
+            if base_defenders:
+                for stalker in self.units.tags_in(base_defenders):
+                    self._client.debug_text_world("Defender",
+                                                  stalker,
+                                                  color=(255, 0, 255))
 
         # If there is a wall-unit, put text on their position
         if self.wall_unit:
@@ -168,7 +169,7 @@ class TooManyStalkersBot(sc2.BotAI):
                                               color=(255, 255, 255))
 
         if self.main:
-            main = self.units.tags_in([self.main.tag])
+            main = self.structures.tags_in([self.main.tag])
             if len(main) > 0:
                 self.main = main[0]
                 self._client.debug_sphere_out(
@@ -286,6 +287,7 @@ class TooManyStalkersBot(sc2.BotAI):
             # Build Gateways once the Warpgate Research is done
             if (
                 self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
+                and self.structures(UnitTypeId.FORGE).exists
                 and self.structures(
                     UnitTypeId.WARPGATE).amount < self.max_gateways
                 and self.can_afford(UnitTypeId.GATEWAY)
@@ -420,8 +422,7 @@ class TooManyStalkersBot(sc2.BotAI):
 
             # If we have a Cybernetics Core, build a Forge
             if (
-                self.structures(UnitTypeId.CYBERNETICSCORE)
-                and self.townhalls.amount > 1
+                self.structures(UnitTypeId.CYBERNETICSCORE).exists
                 and self.structures(UnitTypeId.FORGE) == 0
                 and self.can_afford(UnitTypeId.FORGE)
             ):
@@ -557,36 +558,36 @@ class TooManyStalkersBot(sc2.BotAI):
             if self.wall_unit.distance_to(pos) > 0:
                 self.wall_unit.move(pos)
 
-        # If there are defenders, defend
-        if self.defenders:
-            # Store the attacking enemies
-            attacking_enemies: Units = None
-            attacking_enemies_count: int = -1
+        for nexus_id in self.bases_defenders.keys():
+            # Get the Nexus
+            nexus = self.structures.tags_in([nexus_id])
+            if len(nexus) > 0:
+                nexus = nexus[0]
 
-            # Loop over all the Nexuses
-            for nexus in self.townhalls:
+            if nexus:
                 # Get the attacking enemies
                 enemies: Units = (
-                    self.enemy_units.closer_than(30, self.main) |
-                    self.enemy_structures.closer_than(30, self.main)
+                    self.enemy_units.closer_than(30, nexus) |
+                    self.enemy_structures.closer_than(30, nexus)
                 )
-                # Get the amount of attacking enemies
-                enemies_count: int = enemies.amount
 
-                # Set the highest amount of enemies to attacking enemies
-                if enemies_count > attacking_enemies_count:
-                    attacking_enemies = enemies
+                # If there are attacking enemies, attack them
+                if enemies.exists:
+                    # Get the center position
+                    target = enemies.center
+                    base_defenders = self.bases_defenders[nexus_id]
 
-            # If there are attacking enemies, attack them
-            if attacking_enemies.exists:
-                # Get the center position
-                target = enemies.center
+                    logger.info(f"Enemies detected, attacking {target}")
 
-                logger.info(f"Enemies detected, attacking {target}")
+                    # Send the defenders to attack the Stalkers
+                    for stalker in self.units.tags_in(base_defenders):
+                        stalker.attack(target)
+                else:
+                    base_defenders = self.bases_defenders[nexus_id]
 
-                # Send the defenders to attack the Stalkers
-                for stalker in self.units.tags_in(self.defenders):
-                    stalker.attack(target)
+                    for stalker in self.units.tags_in(base_defenders):
+                        pos = self.find_defend_position(stalker)
+                        stalker.attack(pos)
 
         # If there are attackers, attack
         if self.attackers:
@@ -658,29 +659,57 @@ class TooManyStalkersBot(sc2.BotAI):
                 self.attackers.append(tag)
             # If the next Stalker should be a defender, add it to defenders
             elif self.next_stalker_is_defender():
-                self.defenders.append(tag)
+                # Set some variables
+                min_stalkers_amount = 1000
+                base_min_stalkers = 0
 
-            # If the tag is in attackers, set pos to the Proxy location
+                # Loop over all the base defenders
+                for base_defenders in self.bases_defenders.values():
+                    stalkers = self.units.tags_in(base_defenders)
+
+                    # Get the least amount of Stalkers and the base
+                    if stalkers.amount < min_stalkers_amount:
+                        min_stalkers_amount = stalkers.amount
+
+                        keys = list(self.bases_defenders.keys())
+                        values = list(self.bases_defenders.values())
+
+                        base_min_stalkers = keys[values.index(base_defenders)]
+
+                # Add the Stalkers to the base with the least Stalkers
+                stalkers_at_base = self.bases_defenders[base_min_stalkers]
+                stalkers_at_base.append(tag)
+
+            # If the unit is in attackers, set pos to the Proxy location
             if tag in self.attackers:
                 pos = self.proxy_position
                 pos = pos.towards(self.enemy_start_locations[0], 10)
+
                 logger.info(f"Stalker added as attacker, attack/defend ratio: "
-                            f"{self.attackers.amount}/{self.defenders.amount}")
+                            f"{self.attackers.amount}/{self.get_defenders()}")
 
-            # If the tag is in defenders, set pos to defend location
-            elif tag in self.defenders:
-                nexuses = self.townhalls.closer_than(20, unit)
-                if len(nexuses) > 0:
-                    pos = nexuses[0].position
-                    pos.towards(self.enemy_start_locations[0], 15)
-                logger.info(f"Stalker added as defender, attack/defend ratio: "
-                            f"{self.attackers.amount}/{self.defenders.amount}")
-
-            # If the tag is the wall-off unit, set the pos to the ramp
+            # If the unit is the wall-off, set the pos to the ramp
             elif tag == self.wall_unit.tag:
                 pos = self.main_base_ramp.protoss_wall_warpin
                 logger.info(f"Zealot added as wall-off, attack/defend ratio: "
-                            f"{self.attackers.amount}/{self.defenders.amount}")
+                            f"{self.attackers.amount}/{self.get_defenders()}")
+
+            # If the unit is a defender, set pos to defend location
+            else:
+                # Loop over all the defenders
+                for base_defenders in self.bases_defenders.values():
+                    # If the tag is in one of the defenders
+                    if tag in self.bases_defenders:
+                        pos = self.find_defend_position(unit)
+
+                        # Log
+                        logger.info(f"Stalker added as defender, "
+                                    f"attack/defend ratio: "
+                                    f"{self.attackers.amount}/"
+                                    f"{self.get_defenders()}")
+                        break
+
+                pos = self.main.position
 
             # Attack the pos
             unit.attack(pos)
@@ -716,6 +745,11 @@ class TooManyStalkersBot(sc2.BotAI):
             # Rally the Gateway
             unit(AbilityId.RALLY_BUILDING, pos)
 
+    async def on_building_construction_complete(self, unit: Unit):
+        # Assign an empty Units object to each Nexus
+        if unit.type_id == UnitTypeId.NEXUS:
+            self.bases_defenders[unit.tag] = Units([], self)
+
     async def on_unit_destroyed(self, unit_tag: int):
         """When the building gets destroyed, check if it is the Proxy
 
@@ -733,9 +767,10 @@ class TooManyStalkersBot(sc2.BotAI):
             self.attackers.remove(unit_tag)
 
         # If destroyed units is defender, log to console
-        if unit_tag in self.defenders:
-            logger.info(f"Defense Stalker {unit_tag} was killed")
-            self.defenders.remove(unit_tag)
+        for base_defenders in self.bases_defenders.values():
+            if unit_tag == base_defenders:
+                logger.info(f"Defense Stalker {unit_tag} was killed")
+                base_defenders.remove(unit_tag)
 
         # If destroyed unit is wall-off unit, log to console
         if unit_tag == self.wall_unit.tag:
@@ -781,10 +816,12 @@ class TooManyStalkersBot(sc2.BotAI):
         Returns:
             bool: is the next Stalker an attacker
         """
+        defenders = self.get_defenders() != 0
+
         # If there are defenders and attackers, calculate the ratio
-        if self.defenders and self.attackers:
+        if defenders and self.attackers:
             # For each defender there are {attack_defend_ratio} attackers
-            defenders_amount = self.defenders.amount * self.attack_defend_ratio
+            defenders_amount = self.get_defenders() * self.attack_defend_ratio
             attackers_amount = self.attackers.amount
 
             # If the defender amount is greater, next should be attacker
@@ -797,7 +834,7 @@ class TooManyStalkersBot(sc2.BotAI):
             else:
                 return True
         # If there is one defender but no attackers. next should be attacker
-        elif self.defenders:
+        elif defenders:
             return True
         # If there is one attacker but no defender, next should be defender
         elif self.attackers:
@@ -814,6 +851,35 @@ class TooManyStalkersBot(sc2.BotAI):
         """
         # Returns the opposite of the stalker should be defender
         return not self.next_stalker_is_attacker()
+
+    def get_defenders(self):
+        defenders = 0
+
+        for base_defenders in self.bases_defenders.values():
+            defenders += base_defenders.amount
+
+        return defenders
+
+    def find_defend_position(self, stalker: Unit) -> Point2:
+        # Loop over all the defenders
+        for base_defenders in self.bases_defenders.values():
+            for base_defender in base_defenders:
+                # If the tag is in one of the defenders
+                if stalker.tag == base_defender:
+                    # Get the base
+                    keys = list(self.bases_defenders.keys())
+                    values = list(self.bases_defenders.values())
+
+                    base = keys[values.index(base_defenders)]
+                    base = self.townhalls.tags_in([base])
+                    if len(base) > 0:
+                        base = base[0].position
+
+                    pos = base.towards(self.enemy_start_locations[0], -10)
+
+                    return pos
+
+        raise TypeError(f"Stalker {stalker} is not a defender")
 
     async def enemy_main_destroyed(self) -> bool:
         """Returns True if the enemy's main base is destroyed

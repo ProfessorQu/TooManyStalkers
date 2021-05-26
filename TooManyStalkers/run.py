@@ -36,7 +36,7 @@ import argparse
 from bot import TooManyStalkersBot
 
 bot = Bot(Race.Protoss, TooManyStalkersBot())
-computer = Computer(Race.Zerg, Difficulty.Medium, AIBuild.Rush)
+computer = Computer(Race.Zerg, Difficulty.Medium, AIBuild.Power)
 human = Human(Race.Zerg)
 
 # Start game
