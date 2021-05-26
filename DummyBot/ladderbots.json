@@ -1,0 +1,13 @@
+{
+    "Bots": {
+        "DummyBot": {
+            "Race": "Random",
+            "Type": "Python",
+            "RootPath": "./",
+            "FileName": "run.py",
+            "Args": "-O",
+            "Debug": true,
+            "SurrenderPhrase": "(sad)"
+        }
+    }
+}

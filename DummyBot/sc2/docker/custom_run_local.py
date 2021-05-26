@@ -97,8 +97,7 @@ async def main():
         # print(f"Generated bot2_list: {bot2_list}")
 
         bot1_list = ["TooManyStalkers,P,python"]
-        bot2_list = ["DummyBot,T,python",
-                     "DummyBot,P,python", "DummyBot,Z,python"]
+        bot2_list = ["TooManyStalkers,P,python"]
         map_list = ["TritonLE"]
         """
             "python": ["run.py", "Python"],
