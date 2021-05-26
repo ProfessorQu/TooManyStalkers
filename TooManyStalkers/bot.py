@@ -33,6 +33,8 @@ class TooManyStalkersBot(sc2.BotAI):
 
         # The maximum amount of workers
         self.MAX_WORKERS = 80
+        # The maximum amount of Nexuses
+        self.MAX_NEXUSES = 3
         # The upgrades that will be researched
         self.UPGRADES = ["PROTOSSGROUNDWEAPONSLEVEL",
                          "PROTOSSGROUNDWEAPONSLEVEL",
@@ -411,7 +413,6 @@ class TooManyStalkersBot(sc2.BotAI):
             # If we have a Gateway, build a Cybernetics Core
             if (
                 self.structures(UnitTypeId.GATEWAY).ready.exists
-                and self.townhalls.amount > 1
                 and self.structures(UnitTypeId.CYBERNETICSCORE).amount == 0
                 and self.can_afford(UnitTypeId.CYBERNETICSCORE)
             ):
@@ -536,6 +537,8 @@ class TooManyStalkersBot(sc2.BotAI):
         if (
             self.time // 120 > self.expand_amount
             and self.can_afford(UnitTypeId.NEXUS)
+            and self.already_pending(UnitTypeId.NEXUS) == 0
+            and self.townhalls.amount < self.MAX_NEXUSES
         ):
             logger.info("Expanding")
             self.expand_amount = self.time // 120
