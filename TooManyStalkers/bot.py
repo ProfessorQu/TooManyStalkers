@@ -52,16 +52,13 @@ class TooManyStalkersBot(sc2.BotAI):
         # How many attempts have been made thusfar
         self.proxy_attempts = 0
 
-        # How many times we've expanded
-        self.expand_amount: int = 0
-
         # The defending Stalkers, the wall-off unit, and the position to defend
         self.bases_defenders: dict = {}
         self.wall_unit: Unit = None
 
         # The attacking Stalkers, how many attacks have happend
         self.attackers: Units = Units([], self)
-        self.attack_amount: int = 0
+        self.timing_attack: int = 0
         # If the enemy's main base is destroyed
         self.enemy_main_destroyed_triggerd = False
 
@@ -116,13 +113,13 @@ class TooManyStalkersBot(sc2.BotAI):
         # Build Photon Cannons to protect the main base
         await self.build_cannons()
 
-        # Build Gateways/Warpgates, train/warp units, attack
-        await self.build_unit_structures()
-        await self.train_units()
-
         # Build research buildings and research
         await self.build_research_structures()
         await self.research()
+
+        # Build Gateways/Warpgates, train/warp units, attack
+        await self.build_unit_structures()
+        await self.train_units()
 
         await self.expand()
 
@@ -168,12 +165,11 @@ class TooManyStalkersBot(sc2.BotAI):
                                               self.wall_unit,
                                               color=(255, 255, 255))
 
-        if self.main:
-            main = self.structures.tags_in([self.main.tag])
-            if len(main) > 0:
-                self.main = main[0]
+        if self.structures(UnitTypeId.NEXUS).exists:
+            nexuses = self.structures(UnitTypeId.NEXUS)
+            for nexus in nexuses:
                 self._client.debug_sphere_out(
-                    self.main.position3d, 4, color=(40, 240, 250))
+                    nexus.position3d, 4, color=(40, 240, 250))
 
     async def manage_bases(self):
         """Handle the Chronoboost for each Nexus and produce workers
@@ -263,6 +259,95 @@ class TooManyStalkersBot(sc2.BotAI):
                     ):
                         await self.build(UnitTypeId.ASSIMILATOR, vespene)
 
+    async def build_research_structures(self):
+        """Build structures to research from
+        """
+
+        # None of the structures can be build if we don't have Pylons
+        if self.structures(UnitTypeId.PYLON).ready.exists:
+            # Build Research buildings by Pylon that aren't the Proxy or Cannon
+            pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
+            while pylon == self.proxy:
+                pylon = self.structures(UnitTypeId.PYLON).ready.random
+
+            # If we have a Gateway, build a Cybernetics Core
+            if (
+                self.structures(UnitTypeId.GATEWAY).ready.exists
+                and self.structures(UnitTypeId.CYBERNETICSCORE).amount == 0
+                and self.can_afford(UnitTypeId.CYBERNETICSCORE)
+            ):
+                await self.build(UnitTypeId.CYBERNETICSCORE, near=pylon)
+
+            # If we have a Cybernetics Core, build a Forge
+            if (
+                self.structures(UnitTypeId.CYBERNETICSCORE).exists
+                and self.already_pending(UnitTypeId.FORGE) == 0
+                and not self.structures(UnitTypeId.FORGE).exists
+                and self.can_afford(UnitTypeId.FORGE)
+            ):
+                await self.build(UnitTypeId.FORGE, near=pylon)
+
+            # If the Forge is at it's last upgrade, build a Twilight Council
+            if (
+                self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) > 0
+                and self.structures(UnitTypeId.TWILIGHTCOUNCIL) == 0
+                and self.can_afford(UnitTypeId.TWILIGHTCOUNCIL)
+            ):
+                await self.build(UnitTypeId.TWILIGHTCOUNCIL, near=pylon)
+
+    async def research(self):
+        """Research Warpgates, Weapons, Armor and Shields
+        """
+
+        # If we have a Cybernetics Core, research Warpgates
+        if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
+            # Select a Cybernetics Core and research Warpgate
+            ccore = self.structures(UnitTypeId.CYBERNETICSCORE).ready.first
+
+            ccore.research(UpgradeId.WARPGATERESEARCH)
+
+        # If we have a Forge and Warpgates are researching, research upgrades
+        if (
+            self.structures(UnitTypeId.FORGE).ready.exists
+            and self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) > 0
+        ):
+            # Select a Forge and upgrade
+            forge = self.structures(UnitTypeId.FORGE).ready.first
+
+            # Research Ground Weapons
+            if (
+                self.can_afford(
+                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1)
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) == 0
+            ):
+                forge.research(UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1)
+
+            # Research Ground Armor
+            elif (
+                self.can_afford(
+                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1)
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1) == 0
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) == 1
+            ):
+                forge.research(UpgradeId.PROTOSSGROUNDARMORSLEVEL1)
+
+            # Research Shields
+            elif (
+                self.can_afford(
+                    UpgradeId.PROTOSSSHIELDSLEVEL1)
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSSHIELDSLEVEL1) == 0
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1) == 1
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) == 1
+            ):
+                forge.research(UpgradeId.PROTOSSSHIELDSLEVEL1)
+
     async def build_unit_structures(self):
         """Build Gateways
         """
@@ -287,7 +372,7 @@ class TooManyStalkersBot(sc2.BotAI):
             # Build Gateways once the Warpgate Research is done
             if (
                 self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
-                and self.structures(UnitTypeId.FORGE).exists
+                and self.townhalls.amount > 1
                 and self.structures(
                     UnitTypeId.WARPGATE).amount < self.max_gateways
                 and self.can_afford(UnitTypeId.GATEWAY)
@@ -335,142 +420,76 @@ class TooManyStalkersBot(sc2.BotAI):
                 gateway = self.structures(UnitTypeId.GATEWAY).ready.first
                 gateway.train(UnitTypeId.ZEALOT)
 
-        # If we have Warpgates, warp in Stalkers
+        # Wait to train Stalkers until we have a second base
         if (
-            self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
-            and self.structures(UnitTypeId.WARPGATE).ready.exists
+            self.townhalls.amount > 1
+            and not
+            (
+                self.already_pending_upgrade(
+                UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) == 1
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1) == 0
+            )
         ):
-            # Loop over all the Warpgates and warp in Stalkers
-            for warpgate in self.structures(UnitTypeId.WARPGATE):
-                # If we can't afford a Stalker, return
-                if not self.can_afford(UnitTypeId.STALKER):
-                    return
-                # Get the available abilities of the Warpgate
-                abilities = await self.get_available_abilities(warpgate)
-                # Warp a Stalker if we can
-                if AbilityId.WARPGATETRAIN_STALKER in abilities:
-                    # Select a random Pylon
-                    pylon = self.structures(UnitTypeId.PYLON).ready.random
+            # If we have Warpgates, warp in Stalkers
+            if (
+                self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) == 1
+                and self.structures(UnitTypeId.WARPGATE).ready.exists
+            ):
+                # Loop over all the Warpgates and warp in Stalkers
+                for warpgate in self.structures(UnitTypeId.WARPGATE):
+                    # If we can't afford a Stalker, return
+                    if not self.can_afford(UnitTypeId.STALKER):
+                        return
+                    # Get the available abilities of the Warpgate
+                    abilities = await self.get_available_abilities(warpgate)
+                    # Warp a Stalker if we can
+                    if AbilityId.WARPGATETRAIN_STALKER in abilities:
+                        # Select a random Pylon
+                        pylon = self.structures(UnitTypeId.PYLON).ready.random
 
-                    # If next Stalker is an attacker, warp it to the Proxy
-                    if self.next_stalker_is_attacker():
-                        # Warp the Stalker to the proxy if the Proxy exists
-                        if self.proxy is not None:
-                            pylon = self.proxy
-                    # If next Stalker is a defender, warp it to the base
-                    elif self.next_stalker_is_defender():
-                        # Make sure the random Pylon is not the Proxy
-                        while pylon == self.proxy:
-                            pylon = self.structures(
-                                UnitTypeId.PYLON).ready.random
+                        # If next Stalker is an attacker, warp it to the Proxy
+                        if self.next_stalker_is_attacker():
+                            # Warp the Stalker to the proxy if the Proxy exists
+                            if self.proxy is not None:
+                                pylon = self.proxy
+                        # If next Stalker is a defender, warp it to the base
+                        elif self.next_stalker_is_defender():
+                            # Make sure the random Pylon is not the Proxy
+                            while pylon == self.proxy:
+                                pylon = self.structures(
+                                    UnitTypeId.PYLON).ready.random
 
-                    # Get the position of the Pylon
-                    pos = pylon.position
+                        # Get the position of the Pylon
+                        pos = pylon.position
 
-                    # Find a placement for the Stalker
-                    placement = await self.find_placement(
-                        AbilityId.WARPGATETRAIN_STALKER, pos,
-                        placement_step=3)
+                        # Find a placement for the Stalker
+                        placement = await self.find_placement(
+                            AbilityId.WARPGATETRAIN_STALKER, pos,
+                            placement_step=3)
 
-                    # Warp in the Stalker
-                    if placement:
-                        warpgate.warp_in(UnitTypeId.STALKER, placement)
-        # If we don't have Warpgates, just train Stalkers
-        elif self.structures(UnitTypeId.GATEWAY).ready.exists:
-            # Get all the idle Gateways
-            gateways = self.structures(UnitTypeId.GATEWAY)
-            gateways = gateways.filter(lambda gw: gw.is_idle)
+                        # Warp in the Stalker
+                        if placement:
+                            warpgate.warp_in(UnitTypeId.STALKER, placement)
+            # If we don't have Warpgates, just train Stalkers
+            elif self.structures(UnitTypeId.GATEWAY).ready.exists:
+                # Get all the idle Gateways
+                gateways = self.structures(UnitTypeId.GATEWAY)
+                gateways = gateways.filter(lambda gw: gw.is_idle)
 
-            # Train Stalkers
-            for gateway in gateways:
-                # If we can't afford a Stalker, return
-                if not self.can_afford(UnitTypeId.STALKER):
-                    return
+                # Train Stalkers
+                for gateway in gateways:
+                    # If we can't afford a Stalker, return
+                    if not self.can_afford(UnitTypeId.STALKER):
+                        return
 
-                # Train a Stalker
-                gateway.train(UnitTypeId.STALKER)
+                    # Train a Stalker
+                    gateway.train(UnitTypeId.STALKER)
 
     async def build_cannons(self):
         """Build Photon Cannons to defend
         """
-        for nexus in self.townhalls:
-            cannons = self.structures(
-                UnitTypeId.PHOTONCANNON).closer_than(15, nexus)
-
-            if cannons.amount < 2:
-                pos = nexus.position.towards(self.enemy_start_locations[0], 10)
-                await self.build(UnitTypeId.PHOTONCANNON, pos)
-
-    async def build_research_structures(self):
-        """Build structures to research from
-        """
-
-        # None of the structures can be build if we don't have Pylons
-        if self.structures(UnitTypeId.PYLON).ready.exists:
-            # Build Research buildings by Pylon that aren't the Proxy or Cannon
-            pylon: Unit = self.structures(UnitTypeId.PYLON).ready.random
-            while pylon == self.proxy:
-                pylon = self.structures(UnitTypeId.PYLON).ready.random
-
-            # If we have a Gateway, build a Cybernetics Core
-            if (
-                self.structures(UnitTypeId.GATEWAY).ready.exists
-                and self.structures(UnitTypeId.CYBERNETICSCORE).amount == 0
-                and self.can_afford(UnitTypeId.CYBERNETICSCORE)
-            ):
-                await self.build(UnitTypeId.CYBERNETICSCORE, near=pylon)
-
-            # If we have a Cybernetics Core, build a Forge
-            if (
-                self.structures(UnitTypeId.CYBERNETICSCORE).exists
-                and self.structures(UnitTypeId.FORGE) == 0
-                and self.can_afford(UnitTypeId.FORGE)
-            ):
-                await self.build(UnitTypeId.FORGE, near=pylon)
-
-            # If the Forge is at it's last upgrade, build a Twilight Council
-            if (
-                self.already_pending_upgrade(
-                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) > 0
-                and self.structures(UnitTypeId.TWILIGHTCOUNCIL) == 0
-                and self.can_afford(UnitTypeId.TWILIGHTCOUNCIL)
-            ):
-                await self.build(UnitTypeId.TWILIGHTCOUNCIL, near=pylon)
-
-    async def research(self):
-        """Research Warpgates, Weapons, Armor and Shields
-        """
-
-        # If we have a Cybernetics Core, research Warpgates
-        if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-            # Select a Cybernetics Core and research Warpgate
-            ccore = self.structures(UnitTypeId.CYBERNETICSCORE).ready.first
-
-            ccore.research(UpgradeId.WARPGATERESEARCH)
-
-        # If we have a Forge and Warpgates are researching, research upgrades
-        if (
-            self.structures(UnitTypeId.FORGE).ready.exists
-            and self.already_pending_upgrade(UpgradeId.WARPGATERESEARCH) > 0
-        ):
-            # Select a Forge and upgrade
-            forge = self.structures(UnitTypeId.FORGE).ready.first
-
-            # Go over all the upgrades
-            for i, upgrade in enumerate(self.UPGRADES, 1):
-                # Get the upgrade
-                current_upgrade = getattr(UpgradeId, f"{upgrade}{i}")
-                # If we can afford the upgrade and it's not already pending
-                if (
-                    self.can_afford(current_upgrade)
-                    and not self.already_pending_upgrade(current_upgrade)
-                ):
-                    # If it's the first upgrade, no Twilight Council is needed
-                    if i == 1:
-                        forge.research(current_upgrade)
-                    # If it's not the first upgrade, Twiligth Council is needed
-                    elif self.structures(UnitTypeId.TWILIGHTCOUNCIL).ready:
-                        forge.research(current_upgrade)
+        pass
 
     async def chronoboost(self, nexus):
         """Handle the Chronoboost of a specific nexus
@@ -536,14 +555,26 @@ class TooManyStalkersBot(sc2.BotAI):
 
     async def expand(self):
         if (
-            self.time // 120 > self.expand_amount
-            and self.can_afford(UnitTypeId.NEXUS)
+            self.can_afford(UnitTypeId.NEXUS)
             and self.already_pending(UnitTypeId.NEXUS) == 0
             and self.townhalls.amount < self.MAX_NEXUSES
         ):
             logger.info("Expanding")
-            self.expand_amount = self.time // 120
             await self.expand_now()
+
+    def attack_now(self, enemy_main_destroyed):
+        if enemy_main_destroyed:
+            target: Point2 = self.find_target().position
+        else:
+            # Get the enemy's main base
+            target: Point2 = self.enemy_start_locations[0]
+
+        # Log and chat the attack
+        logger.info(f"Attack {self.timing_attack}, attacking {target}")
+
+        # Attack the enemy's main base
+        for stalker in self.units.tags_in(self.attackers):
+            stalker.attack(target)
 
     async def attack(self):
         """Attack and defend
@@ -555,8 +586,7 @@ class TooManyStalkersBot(sc2.BotAI):
             pos = self.main_base_ramp.protoss_wall_warpin
 
             # If it is not on the position, go to it
-            if self.wall_unit.distance_to(pos) > 0:
-                self.wall_unit.move(pos)
+            self.wall_unit.move(pos)
 
         for nexus_id in self.bases_defenders.keys():
             # Get the Nexus
@@ -593,32 +623,33 @@ class TooManyStalkersBot(sc2.BotAI):
         if self.attackers:
             # If the enemy's main base is destroyed, attack everything
             if await self.enemy_main_destroyed():
-                # Find the target
-                target: Point2 = self.find_target()
-                logger.info(f"Attacking {target.name}")
-                # Get the Stalkers
-                stalkers = self.units.tags_in(self.attackers)
-                stalkers = stalkers.filter(lambda s: s.is_idle)
-
-                # Attack the target
-                for stalker in stalkers:
-                    stalker.attack(target.position)
+                self.attack_now(True)
             # If we can attack (every 5 minutes)
             elif (
-                self.time // 300 > self.attack_amount
+                self.timing_attack == 0
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDWEAPONSLEVEL1) == 1
+                and self.units.tags_in(self.attackers).ready.amount >= 10
             ):
-                # Set attack amount equal to the times 5 minutes have passed
-                self.attack_amount = int(self.time // 300)
-                # Get the enemy's main base
-                target: Point2 = self.enemy_start_locations[0]
-
-                # Log and chat the attack
-                logger.info(f"Attack {self.attack_amount}, attacking {target}")
-                await self.chat_send(f"Starting attack {self.attack_amount}")
-
-                # Attack the enemy's main base
-                for stalker in self.units.tags_in(self.attackers):
-                    stalker.attack(target)
+                self.attack_now(False)
+                self.timing_attack += 1
+                await self.chat_send("Started timing attack with 10+ Stalkers")
+            elif (
+                self.timing_attack == 1
+                and self.already_pending_upgrade(
+                    UpgradeId.PROTOSSGROUNDARMORSLEVEL1) == 1
+                and self.units.tags_in(self.attackers).ready.amount >= 20
+            ):
+                self.attack_now(False)
+                self.timing_attack += 1
+                await self.chat_send("Started timing attack with 20+ Stalkers")
+            elif (
+                self.timing_attack > 1
+                and self.time // 300 in range(-2, 2)
+                and self.units.tags_in(self.attackers).ready.amount >= 20
+            ):
+                self.attack_now(False)
+                await self.chat_send("Started attack with 20+ Stalkers")
             # If enemy main not destroyed and can't attack, go to gather point
             else:
                 # Get the gather position
