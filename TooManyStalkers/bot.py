@@ -110,9 +110,6 @@ class TooManyStalkersBot(sc2.BotAI):
         # Collect Vespene Gas
         await self.collect_gas()
 
-        # Build Photon Cannons to protect the main base
-        await self.build_cannons()
-
         # Build research buildings and research
         await self.build_research_structures()
         await self.research()
@@ -485,11 +482,6 @@ class TooManyStalkersBot(sc2.BotAI):
 
                     # Train a Stalker
                     gateway.train(UnitTypeId.STALKER)
-
-    async def build_cannons(self):
-        """Build Photon Cannons to defend
-        """
-        pass
 
     async def chronoboost(self, nexus):
         """Handle the Chronoboost of a specific nexus
