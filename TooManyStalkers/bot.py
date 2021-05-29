@@ -670,6 +670,7 @@ class TooManyStalkersBot(sc2.BotAI):
             unit.type_id == UnitTypeId.ZEALOT
             and self.wall_unit is None
         ):
+            logger.info("Zealot wall-off unit trained")
             self.wall_unit = unit
 
         # If the created Unit is a Stalker, figure out what it should be
@@ -709,12 +710,6 @@ class TooManyStalkersBot(sc2.BotAI):
                 pos = pos.towards(self.enemy_start_locations[0], 10)
 
                 logger.info(f"Stalker added as attacker, attack/defend ratio: "
-                            f"{self.attackers.amount}/{self.get_defenders()}")
-
-            # If the unit is the wall-off, set the pos to the ramp
-            elif tag == self.wall_unit.tag:
-                pos = self.main_base_ramp.protoss_wall_warpin
-                logger.info(f"Zealot added as wall-off, attack/defend ratio: "
                             f"{self.attackers.amount}/{self.get_defenders()}")
 
             # If the unit is a defender, set pos to defend location
