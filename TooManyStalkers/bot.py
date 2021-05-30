@@ -58,7 +58,12 @@ class TooManyStalkersBot(sc2.BotAI):
 
         # The attacking Stalkers, how many attacks have happend
         self.attackers: Units = Units([], self)
+
+        # The amount of timing attacks
         self.timing_attack: int = 0
+        # The amount of attacks
+        self.attack_amount = 0
+
         # If the enemy's main base is destroyed
         self.enemy_main_destroyed_triggerd = False
 
@@ -204,7 +209,7 @@ class TooManyStalkersBot(sc2.BotAI):
             and self.can_afford(UnitTypeId.PYLON)
         ):
             position = self.townhalls.ready.random.position.towards(
-                self.game_info.map_center, 10
+                self.game_info.map_center, 15
             )
             await self.build(UnitTypeId.PYLON, near=position)
 
@@ -637,9 +642,14 @@ class TooManyStalkersBot(sc2.BotAI):
                 await self.chat_send("Started timing attack with 20+ Stalkers")
             elif (
                 self.timing_attack > 1
-                and self.time // 300 in range(-2, 2)
-                and self.units.tags_in(self.attackers).ready.amount >= 20
+                and
+                (
+                    (self.time // 300 == self.attack_amount
+                     and self.units.tags_in(self.attackers).ready.amount > 20)
+                    or self.supply_used >= 190
+                )
             ):
+                self.attack_amount = self.time // 300
                 self.attack_now(False)
                 await self.chat_send("Started attack with 20+ Stalkers")
             # If enemy main not destroyed and can't attack, go to gather point
