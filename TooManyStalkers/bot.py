@@ -800,9 +800,10 @@ class TooManyStalkersBot(sc2.BotAI):
                 logger.info(f"Defense Stalker {unit_tag} was killed")
                 base_defenders.remove(unit_tag)
 
-        # If destroyed unit is wall-off unit, log to console
-        if unit_tag == self.wall_unit.tag:
-            logger.info(f"Wall-off Zealot {unit_tag} was killed")
+        if self.wall_unit is not None:
+            # If destroyed unit is wall-off unit, log to console
+            if unit_tag == self.wall_unit.tag:
+                logger.info(f"Wall-off Zealot {unit_tag} was killed")
 
     def get_proxy_location(self) -> Point3:
         """Returns the new Proxy location
